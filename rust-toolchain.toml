@@ -1,0 +1,5 @@
+[toolchain]
+channel = "nightly-2025-04-17"
+
+components = [ "rustfmt", "clippy" ]
+targets= ["thumbv6m-none-eabi"]
