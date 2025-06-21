@@ -7,7 +7,7 @@ edition = "2024"
 embassy-sync = { version = "0.6.1",  features = ["defmt"] }
 embassy-executor = { version = "0.7.0", features = ["task-arena-size-98304", "arch-cortex-m", "executor-thread",  "defmt"] }
 embassy-time = { version = "0.4.0",  features = ["defmt", "defmt-timestamp-uptime"] }
-embassy-rp = { version = "0.3.0",  features = ["defmt", "unstable-pac", "time-driver", "critical-section-impl", "rp2040"] }
+embassy-rp = { version = "0.4.0",  features = ["defmt", "unstable-pac", "time-driver", "critical-section-impl", "rp2040"] }
 embedded-hal-async = "1.0"
 embassy-futures = { version = "0.1.0"  }
 
@@ -26,4 +26,5 @@ panic-abort = "0.3.2"
 panic-reset = "0.1.1"
 critical-section = "1.2.0"
 cortex-m = "0.7.7"
+embassy-hal-internal = { version = "0.2.0", features = ["cortex-m", "prio-bits-2"] }
 
