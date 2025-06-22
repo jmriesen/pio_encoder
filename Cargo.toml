@@ -26,5 +26,5 @@ panic-abort = "0.3.2"
 panic-reset = "0.1.1"
 critical-section = "1.2.0"
 cortex-m = "0.7.7"
-embassy-hal-internal = { version = "0.2.0", features = ["cortex-m", "prio-bits-2"] }
+fixed = "1.29.0"
 

@@ -6,14 +6,18 @@ use embassy_executor::Spawner;
 use embassy_futures::yield_now;
 use embassy_rp::{
     PeripheralRef, bind_interrupts,
-    gpio::Pull,
+    gpio::{Input, Pull},
+    pac,
     peripherals::PIO0,
     pio::{
         Common, Config, Direction, FifoJoin, Instance, InterruptHandler, LoadedProgram, Pio,
-        PioPin, ShiftDirection, StateMachine,
+        PioPin, ShiftConfig, ShiftDirection, StateMachine, StatusSource,
+        program::{self, InstructionOperands},
     },
 };
-use embassy_time::Timer;
+mod step_verstion;
+use embassy_time::{Instant, Timer};
+use fixed::traits::ToFixed;
 use {defmt_rtt as _, panic_probe as _};
 
 bind_interrupts!(struct Irqs {
@@ -27,7 +31,7 @@ pub struct PioEncoderProgram<'a, PIO: Instance> {
 impl<'a, PIO: Instance> PioEncoderProgram<'a, PIO> {
     /// Load the program into the given pio
     pub fn new(common: &mut Common<'a, PIO>) -> Self {
-        let prg = embassy_rp::pio::program::pio_file!("src/quadrature_encoder.pio");
+        let prg = program::pio_file!("src/quadrature_encoder_substep.pio");
 
         let prg = common.load_program(&prg.program);
 
@@ -57,11 +61,48 @@ impl<'d, T: Instance, const SM: usize> PioEncoder<'d, T, SM> {
 
         let mut cfg = Config::default();
         cfg.set_in_pins(&[&pin_a, &pin_b]);
+        cfg.shift_in = ShiftConfig {
+            direction: ShiftDirection::Left,
+            auto_fill: true,
+            threshold: 32,
+        };
+        cfg.shift_out = ShiftConfig {
+            direction: ShiftDirection::Right,
+            auto_fill: false,
+            threshold: 32,
+        };
         cfg.fifo_join = FifoJoin::Duplex;
-        cfg.shift_in.direction = ShiftDirection::Left;
+        cfg.clock_divider = 1.to_fixed();
+
+        cfg.status_sel = StatusSource::RxFifoLevel;
+        cfg.status_n = 1;
 
         cfg.use_program(&program.prg, &[]);
         sm.set_config(&cfg);
+        //Raw reading the pins this is fine since we allready own the pins.
+        let pin_state = 0i32; //TODO actually read the value
+
+        critical_section::with(|_| {
+            unsafe {
+                sm.set_y((-pin_state) as u32);
+                sm.exec_instr(
+                    InstructionOperands::MOV {
+                        destination: program::MovDestination::OSR,
+                        op: program::MovOperation::None,
+                        source: program::MovSource::Y,
+                    }
+                    .encode(),
+                );
+                sm.set_y(match pin_state {
+                    0 => 0,
+                    1 => 3,
+                    2 => 1,
+                    3 => 2,
+                    _ => 0, /*unreachable*/
+                });
+            }
+        });
+
         sm.set_enable(true);
         Self { sm }
     }
@@ -70,28 +111,19 @@ impl<'d, T: Instance, const SM: usize> PioEncoder<'d, T, SM> {
         let rx = self.sm.rx();
 
         //Purging buffer of stale data
-        let num_stale_data = rx.level();
-        for _ in 0..num_stale_data {
-            rx.try_pull();
-        }
-        //NOTE: Note a new value is pushed into rx in at most 13 clock cycles.
-        // At 125Mhz this is about 0.1 micro second.
-        embassy_futures::block_on(rx.wait_pull()) as i32
-    }
-    pub async fn read(&mut self) -> embassy_rp::pio_programs::rotary_encoder::Direction {
-        use embassy_rp::pio_programs::rotary_encoder::Direction;
-        let current = self.ticks();
-
-        loop {
-            return match current.cmp(&self.ticks()) {
-                core::cmp::Ordering::Less => Direction::Clockwise,
-                core::cmp::Ordering::Greater => Direction::CounterClockwise,
-                core::cmp::Ordering::Equal => {
-                    yield_now().await;
-                    continue;
-                }
-            };
-        }
+        let num_stale_data = rx.level() / 2;
+        let (ticks, _cycles, _time) = critical_section::with(|_| {
+            for _ in 0..num_stale_data {
+                embassy_futures::block_on(rx.wait_pull());
+                embassy_futures::block_on(rx.wait_pull());
+            }
+            //NOTE: Note a new value is pushed into rx in at most 13 clock cycles.
+            // At 125Mhz this is about 0.1 micro second.
+            let cycles = embassy_futures::block_on(rx.wait_pull()) as i32;
+            let ticks = embassy_futures::block_on(rx.wait_pull()) as i32;
+            (ticks, cycles, Instant::now())
+        });
+        ticks
     }
 }
 
@@ -106,7 +138,7 @@ async fn main(_spawner: Spawner) {
     let prg = PioEncoderProgram::new(&mut common);
     let mut encoder = PioEncoder::new(&mut common, sm0, p.PIN_16, p.PIN_17, &prg);
     loop {
-        info!("read {}", encoder.ticks());
+        info!("read {}", encoder.ticks() / 4);
         Timer::after_millis(10).await;
     }
 }
