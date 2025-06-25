@@ -1,0 +1,196 @@
+use embassy_futures::block_on;
+//This modal stores deals with interacting with the pio hardware.
+//This includes interpreting the rx output.
+//
+use embassy_rp::{
+    gpio::Pull,
+    pio::{
+        Common, Config, FifoJoin, Instance, LoadedProgram, PioPin, ShiftConfig, ShiftDirection,
+        StateMachine, StatusSource,
+        program::{InstructionOperands, MovDestination, MovOperation, MovSource, pio_file},
+    },
+    pio_programs::rotary_encoder::Direction,
+};
+use embassy_time::{Duration, Instant};
+use fixed::traits::ToFixed;
+
+use super::CalibrationData;
+
+pub struct PioEncoderProgram<'a, PIO: Instance> {
+    prg: LoadedProgram<'a, PIO>,
+}
+impl<'a, PIO: Instance> PioEncoderProgram<'a, PIO> {
+    /// Load the program into the given pio
+    pub fn new(common: &mut Common<'a, PIO>) -> Self {
+        let prg = pio_file!("src/quadrature_encoder_substep.pio");
+
+        let prg = common.load_program(&prg.program);
+
+        Self { prg }
+    }
+}
+
+pub struct EncoderStateMachine<'d, T: Instance, const SM: usize> {
+    sm: StateMachine<'d, T, SM>,
+    clocks_per_us: u32,
+}
+
+///This represents the unprocessed data from the pio code.
+pub struct RawData {
+    ///The encoder tick count.
+    pub ticks: RawSteps,
+    pub cycles: DirectionDuration,
+    /// Time when raw data was read
+    pub time: embassy_time::Instant,
+}
+
+pub struct Mesurement {
+    pub steps: RawSteps,
+    pub direction: Direction,
+    pub transition_time: embassy_time::Instant,
+    pub step_time: embassy_time::Instant,
+}
+
+//Physical encoder steps (4 per encoder cycle)
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub struct RawSteps(u32);
+impl RawSteps {
+    pub fn raw(self) -> i32 {
+        self.0 as i32
+    }
+    ///Extract phase information
+    fn phase(self) -> usize {
+        //Get raw steps remainder when divided by 4
+        (self.0 & 3) as usize
+    }
+    pub fn lower_bound(self, calibration: &CalibrationData) -> u32 {
+        self.start_position(calibration)
+    }
+    pub fn upper_bound(self, calibration: &CalibrationData) -> u32 {
+        RawSteps(self.0 + 1).start_position(calibration)
+    }
+
+    fn start_position(self, calibration: &CalibrationData) -> u32 {
+        let whole_cycles = (self.0 << 6) & 0xFFFFFF00_u32;
+        let partial_cycle = calibration[self.phase()];
+        whole_cycles + partial_cycle
+    }
+}
+
+/// Contains the direction of the last encoder tick and how long ago that happened.
+///
+/// let C = cycles since last encoder tick;
+/// If moving clockwise value = 0 - C.
+/// If moving counterclockwise value = i32::max - C +1.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub struct DirectionDuration(i32);
+impl DirectionDuration {
+    fn decode(self, clocks_per_us: u32) -> (Direction, Duration) {
+        let (cycles, direction) = if self.0 < 0 {
+            (-self.0, Direction::Clockwise)
+        } else {
+            (i32::MAX - self.0 + 1, Direction::Clockwise)
+        };
+        let duration = Duration::from_micros(((cycles * 13) as u32 / clocks_per_us).into());
+        (direction, duration)
+    }
+}
+
+impl<'d, T: Instance, const SM: usize> EncoderStateMachine<'d, T, SM> {
+    /// Configure a state machine with the loaded [PioEncoderProgram]
+    pub fn new(
+        pio: &mut Common<'d, T>,
+        mut sm: StateMachine<'d, T, SM>,
+        pin_a: impl PioPin,
+        pin_b: impl PioPin,
+        program: &PioEncoderProgram<'d, T>,
+    ) -> Self {
+        use embassy_rp::pio::Direction;
+        let mut pin_a = pio.make_pio_pin(pin_a);
+        let mut pin_b = pio.make_pio_pin(pin_b);
+        pin_a.set_pull(Pull::Up);
+        pin_b.set_pull(Pull::Up);
+        sm.set_pin_dirs(Direction::In, &[&pin_a, &pin_b]);
+
+        let mut cfg = Config::default();
+        cfg.set_in_pins(&[&pin_a, &pin_b]);
+        cfg.shift_in = ShiftConfig {
+            direction: ShiftDirection::Left,
+            auto_fill: true,
+            threshold: 32,
+        };
+        cfg.shift_out = ShiftConfig {
+            direction: ShiftDirection::Right,
+            auto_fill: false,
+            threshold: 32,
+        };
+        cfg.fifo_join = FifoJoin::Duplex;
+        cfg.clock_divider = 1.to_fixed();
+
+        cfg.status_sel = StatusSource::RxFifoLevel;
+        cfg.status_n = 1;
+
+        cfg.use_program(&program.prg, &[]);
+        sm.set_config(&cfg);
+        //Raw reading the pins this is fine since we already own the pins.
+        let pin_state = 0i32; //TODO actually read the value
+
+        critical_section::with(|_| {
+            unsafe {
+                sm.set_y((-pin_state) as u32);
+                sm.exec_instr(
+                    InstructionOperands::MOV {
+                        destination: MovDestination::OSR,
+                        op: MovOperation::None,
+                        source: MovSource::Y,
+                    }
+                    .encode(),
+                );
+                sm.set_y(match pin_state {
+                    0 => 0,
+                    1 => 3,
+                    2 => 1,
+                    3 => 2,
+                    _ => 0, /*unreachable*/
+                });
+            }
+        });
+
+        sm.set_enable(true);
+        Self {
+            sm,
+            clocks_per_us: (embassy_rp::clocks::clk_sys_freq() + 500_000) / 1_000_000,
+        }
+    }
+
+    pub fn pull_raw_data(&mut self) -> RawData {
+        let rx = self.sm.rx();
+
+        //Purging buffer of stale data
+        let num_stale_data = rx.level() / 2;
+        critical_section::with(|_| {
+            for _ in 0..num_stale_data {
+                block_on(rx.wait_pull());
+                block_on(rx.wait_pull());
+            }
+            //NOTE: Note a new value is pushed into rx in at most 13 clock cycles.
+            // At 125Mhz this is about 0.1 micro second.
+            RawData {
+                cycles: DirectionDuration(block_on(rx.wait_pull()) as i32),
+                ticks: RawSteps(block_on(rx.wait_pull())),
+                time: Instant::now(),
+            }
+        })
+    }
+    pub fn pull_data(&mut self) -> Mesurement {
+        let raw_sample = self.pull_raw_data();
+        let (direction, time_since_last_tick) = raw_sample.cycles.decode(self.clocks_per_us);
+        let transition_time = raw_sample.time - time_since_last_tick;
+        Mesurement {
+            steps: raw_sample.ticks,
+            direction,
+            transition_time,
+            step_time: raw_sample.time,
+        }
+    }
+}
