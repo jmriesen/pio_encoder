@@ -33,6 +33,7 @@ async fn main(_spawner: Spawner) {
     let last_speed = 0;
     let last_raw_step = 0;
     loop {
+        Timer::after_millis(10).await;
         encoder.update();
         if last_position == encoder.position
             && last_speed == encoder.speed
@@ -43,7 +44,5 @@ async fn main(_spawner: Spawner) {
             info!("position{}", encoder.position);
             info!("speed{}", encoder.speed);
         }
-
-        Timer::after_millis(10).await;
     }
 }

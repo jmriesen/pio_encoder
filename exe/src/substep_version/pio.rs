@@ -1,7 +1,8 @@
-use embassy_futures::block_on;
 //This modal stores deals with interacting with the pio hardware.
 //This includes interpreting the rx output.
 //
+use super::{CalibrationData, Direction, encodeing::DirectionDuration};
+use embassy_futures::block_on;
 use embassy_rp::{
     gpio::Pull,
     pio::{
@@ -9,12 +10,9 @@ use embassy_rp::{
         StateMachine, StatusSource,
         program::{InstructionOperands, MovDestination, MovOperation, MovSource, pio_file},
     },
-    pio_programs::rotary_encoder::Direction,
 };
-use embassy_time::{Duration, Instant};
+use embassy_time::Instant;
 use fixed::traits::ToFixed;
-
-use super::CalibrationData;
 
 pub struct PioEncoderProgram<'a, PIO: Instance> {
     prg: LoadedProgram<'a, PIO>,
@@ -74,25 +72,6 @@ impl RawSteps {
         let whole_cycles = (self.0 << 6) & 0xFFFFFF00_u32;
         let partial_cycle = calibration[self.phase()];
         whole_cycles + partial_cycle
-    }
-}
-
-/// Contains the direction of the last encoder tick and how long ago that happened.
-///
-/// let C = cycles since last encoder tick;
-/// If moving clockwise value = 0 - C.
-/// If moving counterclockwise value = i32::max - C +1.
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub struct DirectionDuration(i32);
-impl DirectionDuration {
-    fn decode(self, clocks_per_us: u32) -> (Direction, Duration) {
-        let (cycles, direction) = if self.0 < 0 {
-            (-self.0, Direction::Clockwise)
-        } else {
-            (i32::MAX - self.0 + 1, Direction::Clockwise)
-        };
-        let duration = Duration::from_micros(((cycles * 13) as u32 / clocks_per_us).into());
-        (direction, duration)
     }
 }
 
@@ -176,7 +155,7 @@ impl<'d, T: Instance, const SM: usize> EncoderStateMachine<'d, T, SM> {
             //NOTE: Note a new value is pushed into rx in at most 13 clock cycles.
             // At 125Mhz this is about 0.1 micro second.
             RawData {
-                cycles: DirectionDuration(block_on(rx.wait_pull()) as i32),
+                cycles: DirectionDuration::new(block_on(rx.wait_pull()) as i32),
                 ticks: RawSteps(block_on(rx.wait_pull())),
                 time: Instant::now(),
             }

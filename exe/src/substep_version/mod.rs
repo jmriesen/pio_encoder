@@ -1,9 +1,15 @@
 #![allow(dead_code)]
-use embassy_rp::{
-    pio::{Common, Instance, PioPin, StateMachine},
-    pio_programs::rotary_encoder::Direction,
-};
+use defmt::info;
+use embassy_rp::pio::{Common, Instance, PioPin, StateMachine};
+/// Contains logic for parsing the pio messages into logical values
+mod encodeing;
 mod pio;
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Direction {
+    Clockwise,
+    CounterClockwise,
+}
 
 pub use pio::PioEncoderProgram;
 use pio::{EncoderStateMachine, RawSteps};
@@ -11,6 +17,7 @@ type CalibrationData = [u32; 4];
 
 pub fn substep_calc_speed(delta_substep: u32, delta_us: embassy_time::Duration) -> i32 {
     //TODO Check this calculation.
+    info!("{}", delta_us);
     ((delta_substep << 20) as u64 / delta_us.as_micros()) as i32
 }
 
@@ -99,31 +106,27 @@ impl<'d, T: Instance, const SM: usize> PioEncoder<'d, T, SM> {
             self.prev_trans_pos = transition_pos;
         }
         if !self.is_stopped {
-            let (speed_high, speed_low) = if self.prev_trans_us > self.prev_step_us
+            let (ticks_upper_bound, ticks_lower_bound, delta_time) = if self.prev_trans_us
+                > self.prev_step_us
                 && self.prev_trans_us - self.prev_step_us > new_data.step_time - self.prev_trans_us
             {
+                let delta_time = self.prev_trans_us - self.prev_step_us;
                 (
-                    substep_calc_speed(
-                        self.prev_trans_pos - self.prev_low,
-                        self.prev_trans_us - self.prev_step_us,
-                    ),
-                    substep_calc_speed(
-                        self.prev_trans_pos - self.prev_high,
-                        self.prev_trans_us - self.prev_step_us,
-                    ),
+                    self.prev_trans_pos - self.prev_low,
+                    self.prev_trans_pos - self.prev_high,
+                    delta_time,
                 )
             } else {
+                let delta_time = new_data.step_time - self.prev_trans_us;
                 (
-                    substep_calc_speed(
-                        upper_bound - self.prev_trans_pos,
-                        new_data.step_time - self.prev_trans_us,
-                    ),
-                    substep_calc_speed(
-                        lower_bound - self.prev_trans_pos,
-                        new_data.step_time - self.prev_trans_us,
-                    ),
+                    upper_bound - self.prev_trans_pos,
+                    lower_bound - self.prev_trans_pos,
+                    delta_time,
                 )
             };
+
+            let speed_high = substep_calc_speed(ticks_upper_bound, delta_time);
+            let speed_low = substep_calc_speed(ticks_lower_bound, delta_time);
             self.speed_2_20 = self.speed_2_20.clamp(speed_low, speed_high);
             //TODO check if this math works there is a lot of type casting going on.
             self.speed = ((self.speed_2_20 as i64 * 2500i64) >> 16) as i32;
