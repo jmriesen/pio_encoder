@@ -1,12 +1,10 @@
+use super::Direction;
+use crate::CalibrationData;
+use embassy_time::Duration;
 use std::{
     num::Wrapping,
-    ops::{Add, Mul, Sub},
+    ops::{Add, Sub},
 };
-
-use crate::CalibrationData;
-
-use super::Direction;
-use embassy_time::{Duration, Instant};
 /// The pio program always takes 13 clock cycles for each loop.
 const LOOP_DURATION: u32 = 13;
 
@@ -17,7 +15,7 @@ pub struct Step(Wrapping<u32>);
 pub struct SubStep(Wrapping<u32>);
 
 impl Step {
-    fn new(step: i32) -> Self {
+    pub fn new(step: i32) -> Self {
         Self(Wrapping(step as u32))
     }
     fn phase(self) -> usize {
@@ -29,6 +27,10 @@ impl Step {
     }
     pub fn upper_bound(self, calibration: &CalibrationData) -> SubStep {
         Self(self.0 + Wrapping(1)).start_position(calibration)
+    }
+    //returns both (lower_bound,upper_bound)
+    pub fn bounds(&self, calibration: &CalibrationData) -> (SubStep, SubStep) {
+        (self.lower_bound(calibration), self.upper_bound(calibration))
     }
 
     fn start_position(self, calibration: &CalibrationData) -> SubStep {
@@ -74,7 +76,7 @@ impl Add for SubStep {
 /// If moving counterclockwise value = 2^31 - C .
 /// ```
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub struct DirectionDuration(i32);
+pub struct DirectionDuration(pub i32);
 impl DirectionDuration {
     pub fn new(val: i32) -> Self {
         Self(val)
@@ -92,39 +94,15 @@ impl DirectionDuration {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub struct Mesurement {
-    pub steps: Step,
-    pub direction: Direction,
-    pub step_time: embassy_time::Instant,
-    pub sub_step_time: embassy_time::Instant,
-}
-impl Mesurement {
-    pub fn new(
-        dir_dur: DirectionDuration,
-        steps: Step,
-        instant: Instant,
-        clocks_per_us: u32,
-    ) -> Self {
-        let (direction, duration) = dir_dur.decode(clocks_per_us);
-        Self {
-            steps,
-            direction,
-            step_time: instant - duration,
-            sub_step_time: instant,
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use crate::{
         EQUAL_STEPS,
-        encodeing::{Mesurement, Step, SubStep},
+        encodeing::{Step, SubStep},
     };
 
     use super::Direction;
-    use embassy_time::{Duration, Instant};
+    use embassy_time::Duration;
 
     use super::DirectionDuration;
 
@@ -142,19 +120,7 @@ mod tests {
             (Direction::Clockwise, Duration::from_micros(65))
         );
     }
-    #[test]
-    fn mesurment() {
-        let time = Instant::from_secs(1);
-        assert_eq!(
-            Mesurement::new(DirectionDuration(0 - 50), Step::new(42), time, 10),
-            Mesurement {
-                steps: Step::new(42),
-                direction: Direction::CounterClockwise,
-                step_time: time - Duration::from_micros(65),
-                sub_step_time: time
-            }
-        );
-    }
+
     #[test]
     fn lower_upper_bounds() {
         assert_eq!(Step::new(-4).lower_bound(&EQUAL_STEPS), SubStep::new(-256));
