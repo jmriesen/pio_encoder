@@ -123,7 +123,10 @@ mod tests {
 
     #[test]
     fn lower_upper_bounds() {
-        assert_eq!(Step::new(-4).lower_bound(&EQUAL_STEPS), SubStep::new(-256));
+        assert_eq!(
+            Step::new(-4).bounds(&EQUAL_STEPS),
+            (SubStep::new(-256), SubStep::new(-192))
+        );
         assert_eq!(Step::new(-3).lower_bound(&EQUAL_STEPS), SubStep::new(-192));
         assert_eq!(Step::new(-2).lower_bound(&EQUAL_STEPS), SubStep::new(-128));
         assert_eq!(Step::new(-1).lower_bound(&EQUAL_STEPS), SubStep::new(-64));
