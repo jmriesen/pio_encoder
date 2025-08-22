@@ -41,15 +41,6 @@ impl Mesurement {
         }
     }
 }
-fn bound_speed(
-    speed: Speed,
-    previuse: Mesurement,
-    current: Mesurement,
-    cali: &CalibrationData,
-) -> Speed {
-    let (speed_lower_bound, speed_upper_bound) = calculate_speed_bounds(previuse, current, cali);
-    speed.clamp(speed_lower_bound, speed_upper_bound)
-}
 
 /// Calculate the lower and upper speed bounds giving the current and previuse measurements
 fn calculate_speed_bounds(
@@ -102,52 +93,7 @@ mod tests {
             }
         );
     }
-    #[test]
-    fn whole_steps() {
-        let speed = bound_speed(
-            Speed::new(SubStep::new(64), Duration::from_millis(20)),
-            Mesurement {
-                steps: Step::new(0),
-                direction: Direction::Clockwise,
-                step_instant: Instant::from_millis(0),
-                sample_instant: Instant::from_millis(10),
-            },
-            Mesurement {
-                steps: Step::new(1),
-                direction: Direction::Clockwise,
-                step_instant: Instant::from_millis(20),
-                sample_instant: Instant::from_millis(30),
-            },
-            &EQUAL_STEPS,
-        );
-        assert_eq!(
-            speed,
-            Speed::new(SubStep::new(64), Duration::from_millis(20))
-        );
-    }
-    #[test]
-    fn between_steps() {
-        let speed = bound_speed(
-            Speed::new(SubStep::new(64), Duration::from_millis(20)),
-            Mesurement {
-                steps: Step::new(0),
-                direction: Direction::Clockwise,
-                step_instant: Instant::from_millis(0),
-                sample_instant: Instant::from_millis(10),
-            },
-            Mesurement {
-                steps: Step::new(0),
-                direction: Direction::Clockwise,
-                step_instant: Instant::from_millis(10),
-                sample_instant: Instant::from_millis(30),
-            },
-            &EQUAL_STEPS,
-        );
-        assert_eq!(
-            speed,
-            Speed::new(SubStep::new(64), Duration::from_millis(20))
-        );
-    }
+
     #[test]
     fn last_smaple_time_is_further_away_from_step_time() {
         let delta = Duration::from_millis(10);
