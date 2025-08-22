@@ -48,17 +48,17 @@ impl EncoderState {
         }
 
         if self.prev_step != mesurement.steps {
-            let transition_pos = mesurement.transition(&EQUAL_STEPS);
+            let transition_pos = mesurement.mesured_position(&EQUAL_STEPS);
 
             if !self.is_stopped {
                 self.speed = Speed::new(
                     transition_pos - self.prev_trans_pos,
-                    mesurement.transition_time - self.prev_trans_us,
+                    mesurement.step_instant - self.prev_trans_us,
                 )
             }
 
             self.is_stopped = false;
-            self.prev_trans_us = mesurement.transition_time;
+            self.prev_trans_us = mesurement.step_instant;
             self.prev_trans_pos = transition_pos;
         }
 
