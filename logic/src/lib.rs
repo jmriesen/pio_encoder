@@ -65,3 +65,53 @@ impl EncoderState {
         if !self.is_stopped {}
     }
 }
+#[cfg(test)]
+mod tests {
+    use embassy_time::Instant;
+
+    use crate::{
+        EQUAL_STEPS, EncoderState,
+        encodeing::{Step, SubStep},
+        mesurement::Mesurement,
+        speed::Speed,
+    };
+
+    #[test]
+    fn testing_is_stoped() {
+        let mut encoder_state = EncoderState {
+            calibration_data: EQUAL_STEPS,
+            idle_stop_samples: 3,
+            idle_stop_samples_count: 0,
+            is_stopped: true,
+            prev_trans_pos: SubStep::new(0),
+            prev_trans_us: Instant::from_millis(0),
+            prev_sample_time: Instant::from_millis(0),
+            position: SubStep::new(0),
+            speed: Speed::stopped(),
+            prev_step: Step::new(0),
+            prev_low: SubStep::new(0),
+            prev_high: SubStep::new(0),
+        };
+        // we start off stopped
+        assert!(encoder_state.is_stopped);
+        // Start moving
+        encoder_state.update_state(Mesurement {
+            steps: Step::new(1),
+            direction: crate::Direction::Clockwise,
+            step_instant: Instant::from_millis(10),
+            sample_instant: Instant::from_millis(11),
+        });
+        assert!(!encoder_state.is_stopped);
+        // Next few readings don't show any movement
+        for i in 0..encoder_state.idle_stop_samples as u64 {
+            assert!(!encoder_state.is_stopped);
+            encoder_state.update_state(Mesurement {
+                steps: Step::new(0),
+                direction: crate::Direction::Clockwise,
+                step_instant: Instant::from_millis(0),
+                sample_instant: Instant::from_millis(i * 0),
+            });
+        }
+        assert!(encoder_state.is_stopped);
+    }
+}
