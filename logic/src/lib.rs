@@ -1,4 +1,4 @@
-use encodeing::{Step, SubStep};
+use encodeing::SubStep;
 
 pub mod encodeing;
 
@@ -10,7 +10,7 @@ pub enum Direction {
 mod speed;
 pub use speed::Speed;
 mod mesurement;
-use mesurement::{Mesurement, calculate_speed, calculate_speed_bounds};
+use mesurement::{Mesurement, calculate_speed};
 
 type CalibrationData = [u8; 4];
 /// Default calibration value that assumes each encoder tick is the same size
@@ -25,7 +25,7 @@ pub struct EncoderState {
     calibration_data: CalibrationData,
     idle_stop_samples_count: u32,
     pub position: SubStep,
-    speed: Speed,
+    pub speed: Speed,
     prev_mesurement: Mesurement,
 }
 impl EncoderState {
@@ -34,8 +34,8 @@ impl EncoderState {
     pub fn is_stopped(&self) -> bool {
         self.idle_stop_samples_count >= IDLE_STOP_SAMPLES
     }
-    /// helper method for update_state that guarantiess we are not modifying the current state
-    /// while generateing the next one.
+    /// Helper method for update_state that guaranties we are not modifying the current state
+    /// while generating the next one.
     fn calculate_next_state(&self, new_data: Mesurement) -> Self {
         let speed = if self.is_stopped() {
             Speed::stopped()
@@ -108,7 +108,6 @@ mod tests {
     #[test]
     fn testing_is_stoped() {
         let mut encoder_state = EncoderState::new(mesurement(Step::new(0), 0));
-
         // we start off stopped
         assert!(encoder_state.is_stopped());
         // Start moving
