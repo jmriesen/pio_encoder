@@ -29,34 +29,34 @@ pub struct EncoderState {
     prev_mesurement: Mesurement,
 }
 impl EncoderState {
-    pub fn is_stoped(&self) -> bool {
-        self.idle_stop_samples_count > IDLE_STOP_SAMPLES
+    /// The encoder is considered stopped if there have been `IDLE_STOP_SAMPLES` measurements
+    /// without the step count changing.
+    pub fn is_stopped(&self) -> bool {
+        self.idle_stop_samples_count >= IDLE_STOP_SAMPLES
+    }
+    /// helper method for update_state that guarantiess we are not modifying the current state
+    /// while generateing the next one.
+    fn calculate_next_state(&self, new_data: Mesurement) -> Self {
+        let speed = if self.is_stopped() {
+            Speed::stopped()
+        } else {
+            calculate_speed(new_data, self.prev_mesurement, &self.calibration_data)
+        };
+        let idle_count = if self.prev_mesurement.steps == new_data.steps {
+            self.idle_stop_samples_count + 1
+        } else {
+            0
+        };
+        Self {
+            calibration_data: self.calibration_data,
+            idle_stop_samples_count: idle_count,
+            position: self.position,
+            speed,
+            prev_mesurement: new_data,
+        }
     }
     pub fn update_state(&mut self, mesurement: Mesurement) {
-        //Updates stopped state
-        //What are the three valuables involved
-        //Speed
-        //Why are these last two separate variables?
-        //idle_stop_samples_count
-        //is_stopped
-        //
-
-        if self.prev_mesurement.steps == mesurement.steps {
-            if !self.is_stoped() {
-                self.speed = Speed::stopped();
-            }
-        } else {
-            if !self.is_stoped() {
-                self.speed =
-                    calculate_speed(mesurement, self.prev_mesurement, &self.calibration_data);
-            }
-        }
-        if self.prev_mesurement.steps == mesurement.steps {
-            self.idle_stop_samples_count += 1;
-        } else {
-            self.idle_stop_samples_count = 0;
-        }
-        self.prev_mesurement = mesurement;
+        *self = self.calculate_next_state(mesurement);
         /*
                 self.position = {
                     let new_position = self
@@ -110,16 +110,16 @@ mod tests {
         let mut encoder_state = EncoderState::new(mesurement(Step::new(0), 0));
 
         // we start off stopped
-        assert!(encoder_state.is_stoped());
+        assert!(encoder_state.is_stopped());
         // Start moving
         encoder_state.update_state(mesurement(Step::new(1), 10));
-        assert!(!encoder_state.is_stoped());
+        assert!(!encoder_state.is_stopped());
         // Next few readings don't show any movement
         for i in 0..IDLE_STOP_SAMPLES as u64 {
-            assert!(!encoder_state.is_stoped());
+            assert!(!encoder_state.is_stopped());
             encoder_state.update_state(mesurement(Step::new(1), i * 10 + 11));
         }
-        assert!(encoder_state.is_stopped);
+        assert!(encoder_state.is_stopped());
     }
 
     #[test]
