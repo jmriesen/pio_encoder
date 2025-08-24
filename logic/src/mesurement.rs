@@ -41,6 +41,16 @@ impl Mesurement {
         }
     }
 }
+pub fn calculate_speed(
+    current: Mesurement,
+    previuse: Mesurement,
+    calibration_data: &CalibrationData,
+) -> Speed {
+    Speed::new(
+        current.mesured_position(&calibration_data) - previuse.mesured_position(calibration_data),
+        current.step_instant - previuse.step_instant,
+    )
+}
 
 /// Calculate the lower and upper speed bounds giving the current and previuse measurements
 pub fn calculate_speed_bounds(

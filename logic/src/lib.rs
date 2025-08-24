@@ -10,7 +10,7 @@ pub enum Direction {
 mod speed;
 pub use speed::Speed;
 mod mesurement;
-use mesurement::{Mesurement, calculate_speed_bounds};
+use mesurement::{Mesurement, calculate_speed, calculate_speed_bounds};
 
 type CalibrationData = [u8; 4];
 /// Default calibration value that assumes each encoder tick is the same size
@@ -32,6 +32,11 @@ pub struct EncoderState {
 impl EncoderState {
     pub fn update_state(&mut self, mesurement: Mesurement) {
         //Updates stopped state
+        //What are the three valuables involved
+        //Speed
+        //Why are these last two separate variables?
+        //idle_stop_samples_count
+        //is_stopped
         if self.prev_mesurement.steps == mesurement.steps {
             self.idle_stop_samples_count += 1;
         } else {
@@ -44,17 +49,12 @@ impl EncoderState {
 
         if self.prev_mesurement.steps != mesurement.steps {
             if !self.is_stopped {
-                self.speed = Speed::new(
-                    mesurement.mesured_position(&EQUAL_STEPS)
-                        - self
-                            .prev_mesurement
-                            .mesured_position(&self.calibration_data),
-                    mesurement.step_instant - self.prev_mesurement.step_instant,
-                )
+                self.speed =
+                    calculate_speed(mesurement, self.prev_mesurement, &self.calibration_data);
             }
-
             self.is_stopped = false;
         }
+
         self.prev_mesurement = mesurement;
         /*
                 self.position = {
@@ -71,6 +71,7 @@ impl EncoderState {
                 self.speed = self.speed.clamp(speed_lower_bound, speed_upper_bound);
         */
     }
+
     ///Initialize a new encoder state.
     pub fn new(inital_conditions: Mesurement) -> Self {
         let calibration_data = EQUAL_STEPS;
