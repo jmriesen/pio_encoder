@@ -43,7 +43,7 @@ impl Mesurement {
 }
 
 /// Calculate the lower and upper speed bounds giving the current and previuse measurements
-fn calculate_speed_bounds(
+pub fn calculate_speed_bounds(
     previuse: Mesurement,
     current: Mesurement,
     cali: &[u8; 4],

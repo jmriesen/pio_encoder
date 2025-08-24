@@ -1,4 +1,3 @@
-use embassy_time::Duration;
 use encodeing::{Step, SubStep};
 
 pub mod encodeing;
@@ -9,9 +8,9 @@ pub enum Direction {
     CounterClockwise,
 }
 mod speed;
-use speed::Speed;
+pub use speed::Speed;
 mod mesurement;
-use mesurement::Mesurement;
+use mesurement::{Mesurement, calculate_speed_bounds};
 
 type CalibrationData = [u8; 4];
 /// Default calibration value that assumes each encoder tick is the same size
@@ -22,23 +21,18 @@ const IDLE_STOP_SAMPLES: u32 = 3;
 /// Stores all the logical state required for the sub-step encoder.
 ///
 ///NOTE: this specific dose not rely on embasy_rp since I want it unit testable.
-struct EncoderState {
+pub struct EncoderState {
     calibration_data: CalibrationData,
     idle_stop_samples_count: u32,
     is_stopped: bool,
-    prev_trans_pos: SubStep,
-    prev_trans_us: embassy_time::Instant,
-    prev_sample_time: embassy_time::Instant,
     pub position: SubStep,
     speed: Speed,
-    prev_step: Step,
-    prev_low: SubStep,
-    prev_high: SubStep,
+    prev_mesurement: Mesurement,
 }
 impl EncoderState {
-    fn update_state(&mut self, mesurement: Mesurement) {
+    pub fn update_state(&mut self, mesurement: Mesurement) {
         //Updates stopped state
-        if self.prev_step == mesurement.steps {
+        if self.prev_mesurement.steps == mesurement.steps {
             self.idle_stop_samples_count += 1;
         } else {
             self.idle_stop_samples_count = 0;
@@ -48,37 +42,45 @@ impl EncoderState {
             self.is_stopped = true;
         }
 
-        if self.prev_step != mesurement.steps {
-            let transition_pos = mesurement.mesured_position(&EQUAL_STEPS);
-
+        if self.prev_mesurement.steps != mesurement.steps {
             if !self.is_stopped {
                 self.speed = Speed::new(
-                    transition_pos - self.prev_trans_pos,
-                    mesurement.step_instant - self.prev_trans_us,
+                    mesurement.mesured_position(&EQUAL_STEPS)
+                        - self
+                            .prev_mesurement
+                            .mesured_position(&self.calibration_data),
+                    mesurement.step_instant - self.prev_mesurement.step_instant,
                 )
             }
 
             self.is_stopped = false;
-            self.prev_trans_us = mesurement.step_instant;
-            self.prev_trans_pos = transition_pos;
         }
+        self.prev_mesurement = mesurement;
+        /*
+                self.position = {
+                    let new_position = self
+                        .prev_mesurement
+                        .mesured_position(&self.calibration_data)
+                        + self.speed * (mesurement.sample_instant - mesurement.step_instant);
+                    let (pos_lower_bound, pos_upper_bound) =
+                        mesurement.steps.bounds(&self.calibration_data);
+                    new_position.clamp(pos_lower_bound, pos_upper_bound)
+                };
+                let (speed_lower_bound, speed_upper_bound) =
+                    calculate_speed_bounds(self.prev_mesurement, mesurement, &self.calibration_data);
+                self.speed = self.speed.clamp(speed_lower_bound, speed_upper_bound);
+        */
     }
     ///Initialize a new encoder state.
     pub fn new(inital_conditions: Mesurement) -> Self {
         let calibration_data = EQUAL_STEPS;
-        let (prev_low, prev_high) = inital_conditions.steps.bounds(&calibration_data);
         EncoderState {
             calibration_data,
             idle_stop_samples_count: 0,
             is_stopped: true,
-            prev_trans_pos: inital_conditions.mesured_position(&calibration_data),
-            prev_trans_us: inital_conditions.step_instant,
-            prev_sample_time: inital_conditions.sample_instant,
             position: inital_conditions.mesured_position(&calibration_data),
             speed: Speed::stopped(),
-            prev_step: inital_conditions.steps,
-            prev_low,
-            prev_high,
+            prev_mesurement: inital_conditions,
         }
     }
 }
@@ -114,7 +116,7 @@ mod tests {
         // Next few readings don't show any movement
         for i in 0..IDLE_STOP_SAMPLES as u64 {
             assert!(!encoder_state.is_stopped);
-            encoder_state.update_state(mesurement(Step::new(0), i * 0));
+            encoder_state.update_state(mesurement(Step::new(1), i * 10 + 11));
         }
         assert!(encoder_state.is_stopped);
     }
