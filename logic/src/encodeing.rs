@@ -136,4 +136,18 @@ mod tests {
         assert_eq!(Step::new(3).lower_bound(&EQUAL_STEPS), SubStep::new(192));
         assert_eq!(Step::new(4).lower_bound(&EQUAL_STEPS), SubStep::new(256));
     }
+
+    #[test]
+    fn into_i32() {
+        //This test is here to confirm we can convert between our internal representation and
+        //external representation
+        assert_eq!(Step::new(-1).val(), -1);
+        assert_eq!(Step::new(0).val(), 0);
+        assert_eq!(Step::new(1).val(), 1);
+    }
+    #[test]
+    fn sub_step_arithmatic() {
+        assert_eq!(SubStep::new(1) + SubStep::new(1), SubStep::new(2));
+        assert_eq!(SubStep::new(1) - SubStep::new(1), SubStep::new(0));
+    }
 }

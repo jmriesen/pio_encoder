@@ -98,16 +98,17 @@ mod tests {
     fn last_smaple_time_is_further_away_from_step_time() {
         let delta = Duration::from_millis(10);
         let last_known_position_time = Instant::from_millis(30);
+        //NOTE: specificity starting at two rather than zero to avoid the issues that x + 0 = x - 0
         let speed = calculate_speed_bounds(
             Mesurement {
-                steps: Step::new(0),
+                steps: Step::new(2),
                 direction: Direction::Clockwise,
                 //NOTE: This step time dose not matter
                 step_instant: Instant::from_millis(0),
                 sample_instant: last_known_position_time - delta,
             },
             Mesurement {
-                steps: Step::new(10),
+                steps: Step::new(12),
                 direction: Direction::Clockwise,
                 //NOTE: This is the step time we care about.
                 step_instant: last_known_position_time,
