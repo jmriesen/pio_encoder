@@ -47,8 +47,10 @@ impl EncoderState {
                 calculate_speed_bounds(self.prev_mesurement, new_data, &self.calibration_data);
             if self.is_stopped() {
                 Speed::stopped()
-            } else {
+            } else if self.prev_mesurement.step != new_data.step {
                 calculate_speed(self.prev_mesurement, new_data, &self.calibration_data)
+            } else {
+                self.speed
             }
             .clamp(speed_lower_bound, speed_upper_bound)
         };
@@ -94,7 +96,8 @@ mod tests {
     use embassy_time::{Duration, Instant};
 
     use crate::{
-        EncoderState, IDLE_STOP_SAMPLES,
+        Direction::Clockwise,
+        EQUAL_STEPS, EncoderState, IDLE_STOP_SAMPLES,
         encodeing::{Step, SubStep},
         mesurement::Mesurement,
         speed::Speed,
@@ -103,7 +106,7 @@ mod tests {
     fn mesurement(steps: Step, time: u64) -> Mesurement {
         Mesurement {
             step: steps,
-            direction: crate::Direction::Clockwise,
+            direction: Clockwise,
             step_instant: Instant::from_millis(time),
             sample_instant: Instant::from_millis(time),
         }
@@ -160,5 +163,111 @@ mod tests {
             encoder_state.speed,
             Speed::new(SubStep::new(0), Duration::from_millis(10))
         );
+    }
+
+    #[test]
+    fn example_from_source_documentation() {
+        //This is the example taken from the readme of the original code.
+        //https://github.com/raspberrypi/pico-examples/tree/master/pio/quadrature_encoder_substep
+        let mut encoder = EncoderState::new(Mesurement {
+            step: Step::new(3),
+            direction: Clockwise,
+            step_instant: Instant::from_millis(0),
+            sample_instant: Instant::from_millis(0),
+        });
+        encoder.update_state(Mesurement {
+            step: Step::new(4),
+            direction: Clockwise,
+            step_instant: Instant::from_millis(21),
+            sample_instant: Instant::from_millis(30),
+        });
+        encoder.update_state(Mesurement {
+            step: Step::new(5),
+            direction: Clockwise,
+            step_instant: Instant::from_millis(34),
+            sample_instant: Instant::from_millis(40),
+        });
+        assert_eq!(
+            encoder.speed,
+            Speed::new(SubStep::new(64), Duration::from_millis(13))
+        );
+        encoder.update_state(Mesurement {
+            step: Step::new(7),
+            direction: Clockwise,
+            step_instant: Instant::from_millis(49),
+            sample_instant: Instant::from_millis(50),
+        });
+        assert_eq!(
+            encoder.speed,
+            Speed::new(SubStep::new(128), Duration::from_millis(15))
+        );
+    }
+    #[test]
+    fn inital_position() {
+        let inital_mesurement = Mesurement {
+            step: Step::new(3),
+            direction: Clockwise,
+            step_instant: Instant::from_millis(0),
+            sample_instant: Instant::from_millis(0),
+        };
+        let encoder = EncoderState::new(inital_mesurement);
+        // The encoder is initialized assuming we are in a stopped position,
+        // so the position estimate is just the initial measured position
+        assert_eq!(
+            encoder.position,
+            inital_mesurement.mesured_position(&EQUAL_STEPS)
+        )
+    }
+    /// Test helper function that initializes an encoder that is
+    /// - Moving at one step per 10 milliseconds
+    /// - Currently at step steps_per_10_millis *3
+    /// - moving clockwise
+    fn const_speed_encoder(steps_per_10_millis: i32) -> EncoderState {
+        let mut encoder = EncoderState::new(mesurement(Step::new(0), 0));
+        // Get the encoder moving at one step per 10 milliseconds
+        encoder.update_state(mesurement(Step::new(steps_per_10_millis), 10));
+        encoder.update_state(mesurement(Step::new(steps_per_10_millis * 2), 20));
+        encoder.update_state(mesurement(Step::new(steps_per_10_millis * 3), 30));
+        assert_eq!(
+            encoder.speed,
+            Speed::new(
+                SubStep::new(steps_per_10_millis * 64),
+                Duration::from_millis(10)
+            )
+        );
+        encoder
+    }
+    #[test]
+    fn estimate_substep_posotion() {
+        //Check estimate after a short time
+        let mut encoder = const_speed_encoder(1);
+        encoder.update_state(Mesurement {
+            step: Step::new(3),
+            direction: Clockwise,
+            step_instant: Instant::from_millis(30),
+            sample_instant: Instant::from_millis(35),
+        });
+        assert_eq!(
+            encoder.position,
+            // The estimated position should be halfway between 3 and 4 (-1 due to rounding)
+            Step::new(3).lower_bound(&EQUAL_STEPS) + SubStep::new(64 / 2 - 1)
+        );
+    }
+
+    #[test]
+    fn estimated_position_respects_step_bounds() {
+        //Position estimate should still be bounded by the step bounds
+        let mut encoder = const_speed_encoder(5);
+        encoder.update_state(Mesurement {
+            step: Step::new(15),
+            direction: Clockwise,
+            step_instant: Instant::from_millis(30),
+            sample_instant: Instant::from_millis(39),
+        });
+        //(-1 due to rounding)
+        assert_eq!(
+            encoder.position,
+            Step::new(15).upper_bound(&EQUAL_STEPS) - SubStep::new(1)
+        )
     }
 }

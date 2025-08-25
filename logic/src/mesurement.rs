@@ -187,4 +187,29 @@ mod tests {
             Speed::new(SubStep::new(10 * 64), Duration::from_millis(10))
         )
     }
+    #[test]
+    fn testing_inter_step_bounds() {
+        let speed = calculate_speed_bounds(
+            Mesurement {
+                step: Step::new(3),
+                direction: Direction::Clockwise,
+                step_instant: Instant::from_millis(0),
+                sample_instant: Instant::from_millis(0),
+            },
+            Mesurement {
+                step: Step::new(3),
+                direction: Direction::Clockwise,
+                step_instant: Instant::from_millis(0),
+                sample_instant: Instant::from_millis(5),
+            },
+            &EQUAL_STEPS,
+        );
+        assert_eq!(
+            speed,
+            (
+                Speed::new(SubStep::new(0), Duration::from_millis(10)),
+                Speed::new(SubStep::new(64), Duration::from_millis(5))
+            )
+        )
+    }
 }
