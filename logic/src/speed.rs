@@ -4,7 +4,7 @@ use embassy_time::Duration;
 
 use crate::encodeing::SubStep;
 
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug, defmt::Format)]
 pub struct Speed(i32);
 
 ///Internally stored as sub-steps per 2^20 micro seconds

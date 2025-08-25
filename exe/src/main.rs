@@ -29,20 +29,20 @@ async fn main(_spawner: Spawner) {
     let prg = PioEncoderProgram::new(&mut common);
     let mut encoder = PioEncoder::new(&mut common, sm0, p.PIN_16, p.PIN_17, &prg);
 
-    let last_position = 0;
-    let last_speed = 0;
-    let last_raw_step = 0;
+    let last_position = encoder.position();
+    let last_speed = encoder.speed();
+    let last_raw_step = encoder.ticks();
     loop {
         Timer::after_millis(10).await;
         encoder.update();
-        if last_position == encoder.position
-            && last_speed == encoder.speed
+        if last_position == encoder.position()
+            && last_speed == encoder.speed()
             && last_raw_step == encoder.ticks()
         {
         } else {
             info!("ticks {}", encoder.ticks());
-            info!("position{}", encoder.position);
-            info!("speed{}", encoder.speed);
+            info!("position{}", encoder.position());
+            info!("speed{}", encoder.speed());
         }
     }
 }

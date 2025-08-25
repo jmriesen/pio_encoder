@@ -1,7 +1,7 @@
 //This modal stores deals with interacting with the pio hardware.
 //This includes interpreting the rx output.
 //
-use super::{CalibrationData, Direction, encodeing::DirectionDuration};
+use super::CalibrationData;
 use embassy_futures::block_on;
 use embassy_rp::{
     gpio::Pull,
@@ -13,6 +13,7 @@ use embassy_rp::{
 };
 use embassy_time::Instant;
 use fixed::traits::ToFixed;
+use logic::{DirectionDuration, Mesurement, encodeing::Step};
 
 pub struct PioEncoderProgram<'a, PIO: Instance> {
     prg: LoadedProgram<'a, PIO>,
@@ -21,9 +22,7 @@ impl<'a, PIO: Instance> PioEncoderProgram<'a, PIO> {
     /// Load the program into the given pio
     pub fn new(common: &mut Common<'a, PIO>) -> Self {
         let prg = pio_file!("src/quadrature_encoder_substep.pio");
-
         let prg = common.load_program(&prg.program);
-
         Self { prg }
     }
 }
@@ -31,48 +30,6 @@ impl<'a, PIO: Instance> PioEncoderProgram<'a, PIO> {
 pub struct EncoderStateMachine<'d, T: Instance, const SM: usize> {
     sm: StateMachine<'d, T, SM>,
     clocks_per_us: u32,
-}
-
-///This represents the unprocessed data from the pio code.
-pub struct RawData {
-    ///The encoder tick count.
-    pub ticks: RawSteps,
-    pub cycles: DirectionDuration,
-    /// Time when raw data was read
-    pub time: embassy_time::Instant,
-}
-
-pub struct Mesurement {
-    pub steps: RawSteps,
-    pub direction: Direction,
-    pub transition_time: embassy_time::Instant,
-    pub step_time: embassy_time::Instant,
-}
-
-//Physical encoder steps (4 per encoder cycle)
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub struct RawSteps(u32);
-impl RawSteps {
-    pub fn raw(self) -> i32 {
-        self.0 as i32
-    }
-    ///Extract phase information
-    fn phase(self) -> usize {
-        //Get raw steps remainder when divided by 4
-        (self.0 & 3) as usize
-    }
-    pub fn lower_bound(self, calibration: &CalibrationData) -> u32 {
-        self.start_position(calibration)
-    }
-    pub fn upper_bound(self, calibration: &CalibrationData) -> u32 {
-        RawSteps(self.0 + 1).start_position(calibration)
-    }
-
-    fn start_position(self, calibration: &CalibrationData) -> u32 {
-        let whole_cycles = (self.0 << 6) & 0xFFFFFF00_u32;
-        let partial_cycle = calibration[self.phase()];
-        whole_cycles + partial_cycle
-    }
 }
 
 impl<'d, T: Instance, const SM: usize> EncoderStateMachine<'d, T, SM> {
@@ -142,7 +99,7 @@ impl<'d, T: Instance, const SM: usize> EncoderStateMachine<'d, T, SM> {
         }
     }
 
-    pub fn pull_raw_data(&mut self) -> RawData {
+    pub fn pull_raw_data(&mut self) -> (u32, u32, Instant) {
         let rx = self.sm.rx();
 
         //Purging buffer of stale data
@@ -154,22 +111,20 @@ impl<'d, T: Instance, const SM: usize> EncoderStateMachine<'d, T, SM> {
             }
             //NOTE: Note a new value is pushed into rx in at most 13 clock cycles.
             // At 125Mhz this is about 0.1 micro second.
-            RawData {
-                cycles: DirectionDuration::new(block_on(rx.wait_pull()) as i32),
-                ticks: RawSteps(block_on(rx.wait_pull())),
-                time: Instant::now(),
-            }
+            (
+                block_on(rx.wait_pull()),
+                block_on(rx.wait_pull()),
+                Instant::now(),
+            )
         })
     }
-    pub fn pull_data(&mut self) -> Mesurement {
-        let raw_sample = self.pull_raw_data();
-        let (direction, time_since_last_tick) = raw_sample.cycles.decode(self.clocks_per_us);
-        let transition_time = raw_sample.time - time_since_last_tick;
-        Mesurement {
-            steps: raw_sample.ticks,
-            direction,
-            transition_time,
-            step_time: raw_sample.time,
-        }
+    pub fn pull_data(&mut self) -> logic::Mesurement {
+        let raw = self.pull_raw_data();
+        Mesurement::new(
+            DirectionDuration::new(raw.0 as i32),
+            Step::new(raw.1 as i32),
+            raw.2,
+            self.clocks_per_us,
+        )
     }
 }

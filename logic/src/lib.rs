@@ -3,7 +3,7 @@ use encodeing::{Step, SubStep};
 
 pub mod encodeing;
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug, defmt::Format)]
 pub enum Direction {
     Clockwise,
     CounterClockwise,
@@ -11,7 +11,9 @@ pub enum Direction {
 mod speed;
 pub use speed::Speed;
 mod mesurement;
-use mesurement::{Mesurement, calculate_speed, calculate_speed_bounds};
+pub use encodeing::DirectionDuration;
+pub use mesurement::Mesurement;
+use mesurement::{calculate_speed, calculate_speed_bounds};
 
 type CalibrationData = [u8; 4];
 /// Default calibration value that assumes each encoder tick is the same size

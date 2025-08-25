@@ -28,3 +28,4 @@ critical-section = "1.2.0"
 cortex-m = "0.7.7"
 fixed = "1.29.0"
 
+logic = {path="../logic/"}
