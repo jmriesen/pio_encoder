@@ -1,4 +1,4 @@
-use encodeing::SubStep;
+use encodeing::{Step, SubStep};
 
 pub mod encodeing;
 
@@ -24,11 +24,23 @@ const IDLE_STOP_SAMPLES: u32 = 3;
 pub struct EncoderState {
     calibration_data: CalibrationData,
     idle_stop_samples_count: u32,
-    pub position: SubStep,
-    pub speed: Speed,
+    position: SubStep,
+    speed: Speed,
     prev_mesurement: Mesurement,
 }
 impl EncoderState {
+    /// Get current encoder speed
+    pub fn speed(&self) -> Speed {
+        self.speed
+    }
+    /// Get last estimated position in subsets
+    pub fn position(&self) -> SubStep {
+        self.position
+    }
+    /// Get the current encoder step
+    pub fn steps(&self) -> Step {
+        self.prev_mesurement.step
+    }
     /// The encoder is considered stopped if there have been `IDLE_STOP_SAMPLES` measurements
     /// without the step count changing.
     pub fn is_stopped(&self) -> bool {
