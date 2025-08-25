@@ -33,8 +33,8 @@ impl<'d, T: Instance, const SM: usize> PioEncoder<'d, T, SM> {
         }
     }
     pub fn update(&mut self) {
-        let mesurement = self.sm.pull_data();
-        self.state.update_state(mesurement);
+        let measurement = self.sm.pull_data();
+        self.state.update_state(measurement);
     }
 
     pub fn ticks(&self) -> Step {

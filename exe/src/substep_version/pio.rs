@@ -1,7 +1,6 @@
 //This modal stores deals with interacting with the pio hardware.
 //This includes interpreting the rx output.
 //
-use super::CalibrationData;
 use embassy_futures::block_on;
 use embassy_rp::{
     gpio::Pull,
@@ -13,7 +12,7 @@ use embassy_rp::{
 };
 use embassy_time::Instant;
 use fixed::traits::ToFixed;
-use logic::{DirectionDuration, Mesurement, encodeing::Step};
+use logic::{DirectionDuration, Measurement, encodeing::Step};
 
 pub struct PioEncoderProgram<'a, PIO: Instance> {
     prg: LoadedProgram<'a, PIO>,
@@ -118,9 +117,9 @@ impl<'d, T: Instance, const SM: usize> EncoderStateMachine<'d, T, SM> {
             )
         })
     }
-    pub fn pull_data(&mut self) -> logic::Mesurement {
+    pub fn pull_data(&mut self) -> Measurement {
         let raw = self.pull_raw_data();
-        Mesurement::new(
+        Measurement::new(
             DirectionDuration::new(raw.0 as i32),
             Step::new(raw.1 as i32),
             raw.2,
