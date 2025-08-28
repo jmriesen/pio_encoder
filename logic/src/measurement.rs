@@ -61,7 +61,11 @@ pub fn calculate_speed_bounds(
     let measured_position = current.measured_position(cali);
     let first_measurement_in_step = current.step_instant > previous.sample_instant;
 
-    let time_to_last_measurement = current.step_instant - previous.sample_instant;
+    let time_to_last_measurement = if first_measurement_in_step {
+        current.step_instant - previous.sample_instant
+    } else {
+        previous.sample_instant - current.step_instant
+    };
     let time_to_current_measurement = current.sample_instant - current.step_instant;
     let previous_sample_is_farther_away = time_to_last_measurement > time_to_current_measurement;
     //If this is the first measurement in this encoder step we have two time frames we could chose
