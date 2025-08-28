@@ -3,7 +3,8 @@ use encodeing::{Step, SubStep};
 
 pub mod encodeing;
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug, defmt::Format)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum Direction {
     Clockwise,
     CounterClockwise,

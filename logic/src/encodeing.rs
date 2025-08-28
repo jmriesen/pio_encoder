@@ -14,14 +14,18 @@ pub struct Step(Wrapping<u32>);
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub struct SubStep(Wrapping<u32>);
 
-impl defmt::Format for Step {
-    fn format(&self, fmt: defmt::Formatter) {
-        self.0.0.format(fmt);
+#[cfg(feature = "defmt")]
+mod defmt_impl {
+    use super::*;
+    impl defmt::Format for Step {
+        fn format(&self, fmt: defmt::Formatter) {
+            self.0.0.format(fmt);
+        }
     }
-}
-impl defmt::Format for SubStep {
-    fn format(&self, fmt: defmt::Formatter) {
-        self.0.0.format(fmt);
+    impl defmt::Format for SubStep {
+        fn format(&self, fmt: defmt::Formatter) {
+            self.0.0.format(fmt);
+        }
     }
 }
 

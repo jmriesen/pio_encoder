@@ -7,6 +7,7 @@ use embassy_time::Instant;
 
 /// This represents a current reading from the pio state machine.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct Measurement {
     /// The current step position the encoder is at.
     pub step: Step,
