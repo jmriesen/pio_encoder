@@ -63,7 +63,7 @@ impl<'d, T: Instance, const SM: usize> EncoderStateMachine<'d, T, SM> {
         cfg.clock_divider = 1.to_fixed();
 
         cfg.status_sel = StatusSource::RxFifoLevel;
-        cfg.status_n = StatusN::This(1);
+        cfg.status_n = StatusN::This(2);
 
         cfg.use_program(&program.prg, &[]);
         sm.set_config(&cfg);
