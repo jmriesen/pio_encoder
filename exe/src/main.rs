@@ -8,7 +8,7 @@ use embassy_rp::{
     peripherals::PIO0,
     pio::{InterruptHandler, Pio},
 };
-//mod step_verstion;
+mod step_verstion;
 mod substep_version;
 use embassy_time::Timer;
 use substep_version::{PioEncoder, PioEncoderProgram};
@@ -26,23 +26,17 @@ async fn main(_spawner: Spawner) {
     let Pio {
         mut common, sm0, ..
     } = Pio::new(pio, Irqs);
+    info!("loop");
+    /*let program = step_verstion::PioEncoderProgram::new(&mut common);
+        let mut encoder =
+            step_verstion::PioEncoder::new(&mut common, sm0, p.PIN_16, p.PIN_17, &program);
+    */
     let prg = PioEncoderProgram::new(&mut common);
     let mut encoder = PioEncoder::new(&mut common, sm0, p.PIN_16, p.PIN_17, &prg);
 
-    let last_position = encoder.position();
-    let last_speed = encoder.speed();
-    let last_raw_step = encoder.ticks();
     loop {
-        Timer::after_millis(10).await;
+        info!("ticks {}", encoder.ticks());
+        info!("speed{}", encoder.speed());
         encoder.update();
-        if last_position == encoder.position()
-            && last_speed == encoder.speed()
-            && last_raw_step == encoder.ticks()
-        {
-        } else {
-            info!("ticks {}", encoder.ticks());
-            info!("position{}", encoder.position());
-            info!("speed{}", encoder.speed());
-        }
     }
 }
