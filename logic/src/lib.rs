@@ -70,14 +70,10 @@ impl EncoderState {
             .clamp(speed_lower_bound, speed_upper_bound)
         };
 
-        let position = {
-            let (pos_lower_bound, pos_upper_bound) = new_data.step.bounds(&self.calibration_data);
-            (self
-                .prev_measurement
-                .measured_position(&self.calibration_data)
-                + speed * (new_data.sample_instant - new_data.step_instant))
-                .clamp(pos_lower_bound, pos_upper_bound)
-        };
+        let position = self
+            .prev_measurement
+            .measured_position(&self.calibration_data)
+            + speed * (new_data.sample_instant - new_data.step_instant);
         Self {
             calibration_data: self.calibration_data,
             idle_stop_samples_count: idle_count,
