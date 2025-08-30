@@ -6,7 +6,6 @@ use embassy_rp::{
         StateMachine,
     },
 };
-use {defmt_rtt as _, panic_probe as _};
 pub struct PioEncoderProgram<'a, PIO: Instance> {
     prg: LoadedProgram<'a, PIO>,
 }
