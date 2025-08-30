@@ -1,5 +1,5 @@
 [package]
-name = "pio_counting_encoder"
+name = "pio_speed_encoder"
 version = "0.1.0"
 edition = "2024"
 
