@@ -8,7 +8,6 @@ use embassy_rp::{
     peripherals::PIO0,
     pio::{InterruptHandler, Pio},
 };
-use embassy_time::Timer;
 use pio_speed_encoder::substep_version::{PioEncoder, PioEncoderProgram};
 use {defmt_rtt as _, panic_probe as _};
 
@@ -18,25 +17,22 @@ bind_interrupts!(struct Irqs {
 
 #[embassy_executor::main]
 async fn main(_spawner: Spawner) {
-    /*
-        let p = embassy_rp::init(Default::default());
+    let p = embassy_rp::init(Default::default());
 
-        let pio = p.PIO0;
-        let Pio {
-            mut common, sm0, ..
-        } = Pio::new(pio, Irqs);
-        info!("loop");
-        /*let program = step_verstion::PioEncoderProgram::new(&mut common);
-            let mut encoder =
-                step_verstion::PioEncoder::new(&mut common, sm0, p.PIN_16, p.PIN_17, &program);
-        */
-        let prg = PioEncoderProgram::new(&mut common);
-        let mut encoder = PioEncoder::new(&mut common, sm0, p.PIN_16, p.PIN_17, &prg);
-
-        loop {
-            info!("ticks {}", encoder.ticks());
-            info!("speed{}", encoder.speed());
-            encoder.update();
-        }
+    let pio = p.PIO0;
+    let Pio {
+        mut common, sm0, ..
+    } = Pio::new(pio, Irqs);
+    /*let program = step_verstion::PioEncoderProgram::new(&mut common);
+        let mut encoder =
+            step_verstion::PioEncoder::new(&mut common, sm0, p.PIN_16, p.PIN_17, &program);
     */
+    let prg = PioEncoderProgram::new(&mut common);
+    let mut encoder = PioEncoder::new(&mut common, sm0, p.PIN_16, p.PIN_17, &prg);
+
+    loop {
+        info!("ticks {}", encoder.ticks());
+        info!("speed{}", encoder.speed());
+        encoder.update();
+    }
 }
