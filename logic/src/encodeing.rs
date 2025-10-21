@@ -4,6 +4,7 @@ use core::{
     num::Wrapping,
     ops::{Add, Sub},
 };
+
 use embassy_time::Duration;
 /// The pio program always takes 13 clock cycles for each loop.
 const LOOP_DURATION: u32 = 13;
