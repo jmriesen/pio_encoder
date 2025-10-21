@@ -1135,6 +1135,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "rp_example"
+version = "0.1.0"
+dependencies = [
+ "cortex-m-rt",
+ "defmt 0.3.100",
+ "defmt-rtt",
+ "embassy-executor",
+ "embassy-futures",
+ "embassy-rp",
+ "embassy-time 0.5.0",
+ "panic-probe",
+ "pid",
+ "pio_speed_encoder",
+]
+
+[[package]]
 name = "rustc_version"
 version = "0.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1248,22 +1264,6 @@ name = "strsim"
 version = "0.11.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7da8b5736845d9f2fcb837ea5d9e2628564b3b043a70948a3f0b778838c5fb4f"
-
-[[package]]
-name = "substep_example"
-version = "0.1.0"
-dependencies = [
- "cortex-m-rt",
- "defmt 0.3.100",
- "defmt-rtt",
- "embassy-executor",
- "embassy-futures",
- "embassy-rp",
- "embassy-time 0.5.0",
- "panic-probe",
- "pid",
- "pio_speed_encoder",
-]
 
 [[package]]
 name = "syn"

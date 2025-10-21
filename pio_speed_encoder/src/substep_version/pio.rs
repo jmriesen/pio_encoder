@@ -2,11 +2,14 @@
 //This includes interpreting the rx output.
 //
 use embassy_futures::block_on;
+#[cfg(feature = "rp235x")]
+use embassy_rp::pio::StatusN;
 use embassy_rp::{
-    gpio::Pull,
+    Peri,
+    gpio::{Output, Pull},
     pio::{
         Common, Config, FifoJoin, Instance, LoadedProgram, PioPin, ShiftConfig, ShiftDirection,
-        StateMachine, StatusN, StatusSource,
+        StateMachine, StatusSource,
         program::{InstructionOperands, MovDestination, MovOperation, MovSource, pio_file},
     },
 };
@@ -36,8 +39,8 @@ impl<'d, T: Instance, const SM: usize> EncoderStateMachine<'d, T, SM> {
     pub fn new(
         pio: &mut Common<'d, T>,
         mut sm: StateMachine<'d, T, SM>,
-        pin_a: impl PioPin,
-        pin_b: impl PioPin,
+        pin_a: Peri<'d, impl PioPin + 'd>,
+        pin_b: Peri<'d, impl PioPin + 'd>,
         program: &PioEncoderProgram<'d, T>,
     ) -> Self {
         use embassy_rp::pio::Direction;
@@ -63,8 +66,14 @@ impl<'d, T: Instance, const SM: usize> EncoderStateMachine<'d, T, SM> {
         cfg.clock_divider = 1.to_fixed();
 
         cfg.status_sel = StatusSource::RxFifoLevel;
-        cfg.status_n = StatusN::This(2);
-
+        #[cfg(feature = "rp2040")]
+        {
+            cfg.status_n = 0x12;
+        }
+        #[cfg(feature = "rp235x")]
+        {
+            cfg.status_n = StatusN::This(2);
+        }
         cfg.use_program(&program.prg, &[]);
         sm.set_config(&cfg);
         //Raw reading the pins this is fine since we already own the pins.

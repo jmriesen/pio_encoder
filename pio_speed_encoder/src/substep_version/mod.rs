@@ -1,5 +1,8 @@
 #![allow(dead_code)]
-use embassy_rp::pio::{Common, Instance, PioPin, StateMachine};
+use embassy_rp::{
+    Peri,
+    pio::{Common, Instance, PioPin, StateMachine},
+};
 /// Contains logic for parsing the pio messages into logical values
 mod pio;
 
@@ -21,8 +24,8 @@ impl<'d, T: Instance, const SM: usize> PioEncoder<'d, T, SM> {
     pub fn new(
         pio: &mut Common<'d, T>,
         sm: StateMachine<'d, T, SM>,
-        pin_a: impl PioPin,
-        pin_b: impl PioPin,
+        pin_a: Peri<'d, impl PioPin + 'd>,
+        pin_b: Peri<'d, impl PioPin + 'd>,
         program: &PioEncoderProgram<'d, T>,
     ) -> Self {
         let mut sm = EncoderStateMachine::new(pio, sm, pin_a, pin_b, program);

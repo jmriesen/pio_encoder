@@ -4,11 +4,11 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-embassy-time = { version = "0.4.0" }
+embassy-time = { version = "0.5.0" }
 defmt = {version = "0.3",  optional = true}
 
 [dev-dependencies]
-embassy-time = { version = "0.4.0", features = [ "std" ]}
+embassy-time = { version = "0.5.0", features = [ "std" ]}
 
 [features]
 defmt = ["embassy-time/defmt","dep:defmt"]

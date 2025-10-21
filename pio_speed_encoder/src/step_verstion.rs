@@ -1,5 +1,6 @@
 use embassy_futures::yield_now;
 use embassy_rp::{
+    Peri,
     gpio::Pull,
     pio::{
         Common, Config, Direction, FifoJoin, Instance, LoadedProgram, PioPin, ShiftDirection,
@@ -31,8 +32,8 @@ impl<'d, T: Instance, const SM: usize> PioEncoder<'d, T, SM> {
     pub fn new(
         pio: &mut Common<'d, T>,
         mut sm: StateMachine<'d, T, SM>,
-        pin_a: impl PioPin,
-        pin_b: impl PioPin,
+        pin_a: Peri<'d, impl PioPin + 'd>,
+        pin_b: Peri<'d, impl PioPin + 'd>,
         program: &PioEncoderProgram<'d, T>,
     ) -> Self {
         let mut pin_a = pio.make_pio_pin(pin_a);

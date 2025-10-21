@@ -1,0 +1,19 @@
+[package]
+name = "rp_example"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+embassy-executor = { version = "0.9.0", features = [ "arch-cortex-m", "executor-thread",  "defmt"] }
+embassy-rp = { version = "0.8.0",  features = ["defmt", "unstable-pac", "time-driver", "critical-section-impl"] }
+embassy-time = { version = "0.5.0"  }
+
+defmt = "0.3"
+defmt-rtt = "0.4"
+panic-probe = { version = "0.3", features = ["print-defmt"] }
+
+cortex-m-rt = "0.7.0"
+
+pio_speed_encoder = { path="../../pio_speed_encoder/" ,features = ["rp2040"]}
+pid = "4.0.0"
+embassy-futures = "0.1.2"
