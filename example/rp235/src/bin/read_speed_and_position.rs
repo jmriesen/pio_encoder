@@ -3,15 +3,12 @@
 
 use defmt::*;
 use embassy_executor::Spawner;
-use embassy_futures::yield_now;
 use embassy_rp::{
     bind_interrupts,
     peripherals::PIO0,
     pio::{InterruptHandler, Pio},
-    pwm::{Config, Pwm, SetDutyCycle},
 };
 use embassy_time::Timer;
-use pid::Pid;
 use pio_speed_encoder::substep_version::{PioEncoder, PioEncoderProgram};
 use {defmt_rtt as _, panic_probe as _};
 

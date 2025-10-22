@@ -6,7 +6,7 @@ use embassy_futures::block_on;
 use embassy_rp::pio::StatusN;
 use embassy_rp::{
     Peri,
-    gpio::{Output, Pull},
+    gpio::Pull,
     pio::{
         Common, Config, FifoJoin, Instance, LoadedProgram, PioPin, ShiftConfig, ShiftDirection,
         StateMachine, StatusSource,
