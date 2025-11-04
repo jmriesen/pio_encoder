@@ -40,7 +40,10 @@ async fn main(_spawner: Spawner) {
     config.divider = divider.into();
 
     let mut pwm = Pwm::new_output_b(p.PWM_SLICE2, p.PIN_5, config.clone());
-    let mut pid: Pid<f32> = Pid::new(222_088.0 / 2.0, config.top as f32);
+
+    //NOTE: Change set_point p and i value to suit your motor.
+    let set_point = 222_088.0 / 2.0;
+    let mut pid: Pid<f32> = Pid::new(set_point, config.top as f32);
     pid.p(0.0001, config.top);
     pid.i(0.0001, config.top);
 
@@ -49,14 +52,7 @@ async fn main(_spawner: Spawner) {
         info!("speed{}", encoder.speed());
         encoder.update();
         let output = pid.next_control_output(encoder.speed().ticks_per_second() as f32);
-        //info!("o%{}", output.output as f32 / config.top as f32);
-        //info!("o%{}", output.output as u16);
-        //info!("T%{}", config.top as f32);
-        //info!("p%{}", output.p as f32 / config.top as f32);
-        //info!("i%{}", output.i as f32 / config.top as f32);
-        //info!("d%{}", output.d as f32 / config.top as f32);
         pwm.set_duty_cycle(output.output as u16).unwrap();
-
         Timer::after_millis(10).await;
     }
 }

@@ -33,22 +33,5 @@ async fn main(_spawner: Spawner) {
         Timer::after_millis(10).await;
         info!("speed{}", encoder.speed());
         info!("sub steps:{}", encoder.position());
-        /*
-                        info!("// 100% duty cycle, fully on");
-                        pwm.set_duty_cycle_fully_on().unwrap();
-                        Timer::after_secs(1).await;
-
-                        info!("// 66% duty cycle. Expressed as simple percentage.");
-                        pwm.set_duty_cycle_percent(66).unwrap();
-                        Timer::after_secs(1).await;
-
-        info!("// 25% duty cycle. Expressed as 32768/4 = 8192.");
-        pwm.set_duty_cycle(config.top / 2).unwrap();
-        Timer::after_secs(1).await;
-
-        info!("// 0% duty cycle, fully off.");
-        pwm.set_duty_cycle_fully_off().unwrap();
-        Timer::after_secs(1).await;
-        */
     }
 }
