@@ -48,7 +48,7 @@ pub fn calculate_speed(
     calibration_data: &CalibrationData,
 ) -> Speed {
     Speed::new(
-        current.measured_position(&calibration_data) - previous.measured_position(calibration_data),
+        current.measured_position(calibration_data) - previous.measured_position(calibration_data),
         current.step_instant - previous.step_instant,
     )
 }

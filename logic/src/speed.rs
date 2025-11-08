@@ -28,6 +28,10 @@ impl Mul<Duration> for Speed {
     type Output = SubStep;
 
     fn mul(self, rhs: Duration) -> Self::Output {
+        #[expect(
+            clippy::suspicious_arithmetic_impl,
+            reason = "Internal storage is in units of 2^20 microseconds"
+        )]
         SubStep::new(((self.0 as u64).wrapping_mul(rhs.as_micros()) >> 20) as i32)
     }
 }
