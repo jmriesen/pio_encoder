@@ -90,6 +90,17 @@ impl Add for SubStep {
 /// let C = cycles since last encoder tick;
 /// If moving clockwise value = 0 - C.
 /// If moving counterclockwise value = 2^31 - C .
+///
+/// NOTE: the cycles counter **can** overflow (i32 are not infinite).
+/// In that case the direction will flip and the duration will reset to zero.
+/// This happens afer about 3.5 miniutes (assuming 125Mhz clock speed)
+///
+/// However, overflows will not cause any faulty readings.
+/// The duration is not used in speed calculations if the encoder is in a stoped state.
+/// The caller of the crate is repsocible for repeatedly callling the update function
+/// (10hz at least)
+/// So we will always be in a stoped state before an overflow could occur.
+/// stae.
 /// ```
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct DirectionDuration(pub i32);
@@ -103,8 +114,11 @@ impl DirectionDuration {
         } else {
             (i32::MIN.wrapping_sub(self.0), Direction::Clockwise)
         };
-        //NOTE: num iterations is always positive.
-        let cycles = iterations as u32 * LOOP_DURATION;
+        let iterations = iterations as u32;
+
+        // By the time we have hit u32::Max cycles the encoder should be in a stopped state.
+        // So saturating here should not affect anything (aside from preventing an overflow).
+        let cycles = (iterations).saturating_mul(LOOP_DURATION);
         let duration = Duration::from_micros((cycles / clocks_per_us).into());
         (direction, duration)
     }
