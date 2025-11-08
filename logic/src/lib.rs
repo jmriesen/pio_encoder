@@ -26,7 +26,7 @@ const IDLE_STOP_SAMPLES: u32 = 3;
 
 /// Stores all the logical state required for the sub-step encoder.
 ///
-///NOTE: this specific does not rely on embasy_rp that would prevent me from compiling unit tests.
+///NOTE: this specific does not rely on `embasy_rp` that would prevent me from compiling unit tests.
 pub struct EncoderState {
     calibration_data: CalibrationData,
     idle_stop_samples_count: u32,

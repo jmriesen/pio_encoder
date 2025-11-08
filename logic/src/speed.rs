@@ -11,7 +11,7 @@ pub struct Speed(i32);
 ///Internally stored as sub-steps per 2^20 micro seconds
 impl Speed {
     pub fn new(delta: SubStep, duration: Duration) -> Self {
-        let sub_steps = delta.val() as i64;
+        let sub_steps = i64::from(delta.val());
         let micro_seconds = duration.as_micros() as i64;
         let speed = (sub_steps << 20) / micro_seconds;
         Self(speed as i32)
@@ -21,7 +21,7 @@ impl Speed {
     }
     //TODO: test
     pub fn ticks_per_second(&self) -> i32 {
-        ((self.0 as i64 * 62500i64) >> 16) as i32
+        ((i64::from(self.0) * 62500i64) >> 16) as i32
     }
 }
 impl Mul<Duration> for Speed {

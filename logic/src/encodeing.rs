@@ -32,6 +32,10 @@ mod defmt_impl {
 
 impl Step {
     pub fn new(step: i32) -> Self {
+        #[allow(
+            clippy::cast_sign_loss,
+            reason = "we are casting to a u32 specifly to take advantage of the wrapping behavior. This casting is inverted before the raw value ever leaves this modual"
+        )]
         Self(Wrapping(step as u32))
     }
     fn phase(self) -> usize {
@@ -52,20 +56,36 @@ impl Step {
     fn start_position(self, calibration: &CalibrationData) -> SubStep {
         //Extract the whole number of cycles
         let whole_cycles = self.0 / Wrapping(4);
-        let partial_cycle = Wrapping(calibration[self.phase()] as u32);
+        let partial_cycle = Wrapping(u32::from(calibration[self.phase()]));
         SubStep((whole_cycles << 8) + partial_cycle)
     }
     pub fn val(&self) -> i32 {
-        self.0.0 as i32
+        #[allow(
+            clippy::cast_possible_wrap,
+            reason = "Inverting cast done in constructor"
+        )]
+        {
+            self.0.0 as i32
+        }
     }
 }
 
 impl SubStep {
     pub fn new(step: i32) -> Self {
+        #[allow(
+            clippy::cast_sign_loss,
+            reason = "we are casting to a u32 specifly to take advantage of the wrapping behavior. This casting is inverted before the raw value ever leaves this modual"
+        )]
         Self(Wrapping(step as u32))
     }
     pub fn val(&self) -> i32 {
-        self.0.0 as i32
+        #[allow(
+            clippy::cast_possible_wrap,
+            reason = "Inverting cast done in constructor"
+        )]
+        {
+            self.0.0 as i32
+        }
     }
 }
 
@@ -114,7 +134,15 @@ impl DirectionDuration {
         } else {
             (i32::MIN.wrapping_sub(self.0), Direction::Clockwise)
         };
-        let iterations = iterations as u32;
+        let iterations = {
+            #[expect(
+                clippy::cast_sign_loss,
+                reason = "sign infomation is used to store direction and has allrady been extracted"
+            )]
+            {
+                iterations as u32
+            }
+        };
 
         // By the time we have hit u32::Max cycles the encoder should be in a stopped state.
         // So saturating here should not affect anything (aside from preventing an overflow).
