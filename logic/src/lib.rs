@@ -105,6 +105,13 @@ impl EncoderState {
     }
 }
 
+pub trait Encoder {
+    fn update(&mut self);
+    fn speed(&self) -> Speed;
+    fn position(&self) -> SubStep;
+    fn ticks(&self) -> Step;
+}
+
 #[cfg(test)]
 mod tests {
     use embassy_time::{Duration, Instant};

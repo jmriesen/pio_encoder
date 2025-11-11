@@ -9,7 +9,7 @@ mod pio;
 use pio::EncoderStateMachine;
 pub use pio::PioEncoderProgram;
 use pio_speed_encoder_logic::{
-    EncoderState, Speed,
+    Encoder, EncoderState, Speed,
     encodeing::{Step, SubStep},
 };
 type CalibrationData = [u32; 4];
@@ -35,18 +35,21 @@ impl<'d, T: Instance, const SM: usize> PioEncoder<'d, T, SM> {
             state: EncoderState::new(inial_data),
         }
     }
-    pub fn update(&mut self) {
+}
+
+impl<'d, T: Instance, const SM: usize> Encoder for PioEncoder<'d, T, SM> {
+    fn update(&mut self) {
         let measurement = self.sm.pull_data();
         self.state.update_state(measurement);
     }
 
-    pub fn ticks(&self) -> Step {
+    fn ticks(&self) -> Step {
         self.state.steps()
     }
-    pub fn position(&self) -> SubStep {
+    fn position(&self) -> SubStep {
         self.state.position()
     }
-    pub fn speed(&self) -> Speed {
+    fn speed(&self) -> Speed {
         self.state.speed()
     }
 }
