@@ -6,18 +6,18 @@ use embassy_rp::{
 /// Contains logic for parsing the pio messages into logical values
 mod pio;
 
-use logic::{
+use pio::EncoderStateMachine;
+pub use pio::PioEncoderProgram;
+use pio_speed_encoder_logic::{
     EncoderState, Speed,
     encodeing::{Step, SubStep},
 };
-use pio::EncoderStateMachine;
-pub use pio::PioEncoderProgram;
 type CalibrationData = [u32; 4];
 
 /// Pio Backed quadrature encoder reader
 pub struct PioEncoder<'d, T: Instance, const SM: usize> {
     sm: EncoderStateMachine<'d, T, SM>,
-    state: logic::EncoderState,
+    state: EncoderState,
 }
 
 impl<'d, T: Instance, const SM: usize> PioEncoder<'d, T, SM> {

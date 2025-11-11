@@ -14,7 +14,7 @@ defmt-rtt = "0.4"
 critical-section = "1.2.0"
 fixed = "1.29.0"
 
-logic = {path="../logic/",features = ["defmt"]}
+pio_speed_encoder_logic = {path="../logic/",features = ["defmt"]}
 
 [features]
 rp2040 = ["embassy-rp/rp2040"]

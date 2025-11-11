@@ -15,7 +15,7 @@ use embassy_rp::{
 };
 use embassy_time::Instant;
 use fixed::traits::ToFixed;
-use logic::{DirectionDuration, Measurement, encodeing::Step};
+use pio_speed_encoder_logic::{DirectionDuration, Measurement, encodeing::Step};
 
 pub struct PioEncoderProgram<'a, PIO: Instance> {
     prg: LoadedProgram<'a, PIO>,
