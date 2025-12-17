@@ -22,12 +22,6 @@ jobs:
     - name: Run tests
       working-directory: ./logic
       run: cargo test --verbose
-    - name: Build main crate rp
-      working-directory: ./pio_speed_encoder
-      run: cargo build --verbose -F rp2040
-    - name: Build main crate rp235x
-      working-directory: ./pio_speed_encoder
-      run: cargo build --verbose -F rp235x 
     - name: Build examples rp
       working-directory: ./example/rp
       run: cargo build --verbose
