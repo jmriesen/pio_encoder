@@ -27,10 +27,9 @@ jobs:
 
       - name: Upload static files as artifact
         id: deployment
-        working-directory: ./pio_speed_encoder
         uses: actions/upload-pages-artifact@v3 
         with:
-          path: target/doc/
+          path: pio_speed_encoder/target/doc/
 
   # Deployment job
   deploy:
