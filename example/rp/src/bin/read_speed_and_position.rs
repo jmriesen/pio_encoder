@@ -1,6 +1,5 @@
 #![no_std]
 #![no_main]
-
 use defmt::*;
 use embassy_executor::Spawner;
 use embassy_rp::{
@@ -9,6 +8,7 @@ use embassy_rp::{
     pio::{InterruptHandler, Pio},
 };
 use embassy_time::Timer;
+use pio_speed_encoder::Encoder;
 use pio_speed_encoder::substep_version::{PioEncoder, PioEncoderProgram};
 use {defmt_rtt as _, panic_probe as _};
 
