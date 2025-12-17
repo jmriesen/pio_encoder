@@ -16,6 +16,9 @@ pub struct Step(Wrapping<u32>);
 pub struct SubStep(Wrapping<u32>);
 
 #[cfg(feature = "defmt")]
+//NOTE: I have created a pull request for wrapping to impl defmt::format.
+//It should be present in the next defmt release.
+//If so this impl can be defeated
 mod defmt_impl {
     use super::*;
     impl defmt::Format for Step {
