@@ -1,7 +1,7 @@
 #![cfg_attr(not(test), no_std)]
 #![warn(clippy::pedantic)]
 #![allow(clippy::must_use_candidate)]
-use encodeing::{Step, SubStep};
+pub use encodeing::{Step, SubStep};
 
 pub mod encodeing;
 

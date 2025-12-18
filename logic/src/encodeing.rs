@@ -109,34 +109,45 @@ impl Add for SubStep {
 
 /// Contains the direction of the last encoder tick and how long ago that happened.
 ///
-/// ```md
-/// let C = cycles since last encoder tick;
-/// If moving clockwise value = 0 - C.
-/// If moving counterclockwise value = 2^31 - C .
+/// This encoding works by splitting the i32 in half.
+/// - Clockwise range = [0, `i32::MIN`)
+/// - counterclockwise range = [`i32::MIN`,0)
+/// When a tick is register the counter is reset to the top of its respective range (Clockwise or
+/// Counterclockwise)
+/// After every subsequent loop if a step was not detected we decrement the counter.
 ///
 /// NOTE: the cycles counter **can** overflow (i32 are not infinite).
 /// In that case the direction will flip and the duration will reset to zero.
-/// This happens afer about 3.5 miniutes (assuming 125Mhz clock speed)
+/// This happens after about 3.5 minutes (assuming 125Mhz clock speed)
 ///
 /// However, overflows will not cause any faulty readings.
-/// The duration is not used in speed calculations if the encoder is in a stoped state.
-/// The caller of the crate is repsocible for repeatedly callling the update function
+/// The duration is not used in speed calculations if the encoder is in a stopped state.
+/// The caller of the crate is reasonable for repeatedly calling the update function,
 /// (10hz at least)
-/// So we will always be in a stoped state before an overflow could occur.
-/// stae.
-/// ```
+/// so we will always be in a stopped state before an overflow could occur.
+/// Represents the encoders current direction and how many PIO loop has run since the last step.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct DirectionDuration(pub i32);
+
+// The value that means 0 PIO loops since last step.
+fn loop_count_start(direction: Direction) -> i32 {
+    match direction {
+        Direction::Clockwise => 0,
+        Direction::CounterClockwise => i32::MIN,
+    }
+}
 impl DirectionDuration {
     pub fn new(val: i32) -> Self {
         Self(val)
     }
-    pub fn decode(self, clocks_per_us: u32) -> (Direction, Duration) {
-        let (iterations, direction) = if self.0 < 0 {
-            (0_i32.wrapping_sub(self.0), Direction::CounterClockwise)
+    /// Split into direction and duration.
+    pub fn decode(self, clock_ticks_per_us: u32) -> (Direction, Duration) {
+        let direction = if self.0 < 0 {
+            Direction::CounterClockwise
         } else {
-            (i32::MIN.wrapping_sub(self.0), Direction::Clockwise)
+            Direction::Clockwise
         };
+        let iterations = loop_count_start(direction).wrapping_sub(self.0);
         let iterations = {
             #[expect(
                 clippy::cast_sign_loss,
@@ -150,7 +161,7 @@ impl DirectionDuration {
         // By the time we have hit u32::Max cycles the encoder should be in a stopped state.
         // So saturating here should not affect anything (aside from preventing an overflow).
         let cycles = (iterations).saturating_mul(LOOP_DURATION);
-        let duration = Duration::from_micros((cycles / clocks_per_us).into());
+        let duration = Duration::from_micros((cycles / clock_ticks_per_us).into());
         (direction, duration)
     }
 }
@@ -159,7 +170,7 @@ impl DirectionDuration {
 mod tests {
     use crate::{
         EQUAL_STEPS,
-        encodeing::{Step, SubStep},
+        encodeing::{Step, SubStep, loop_count_start},
     };
 
     use super::Direction;
@@ -170,14 +181,14 @@ mod tests {
     #[test]
     fn incrementing() {
         assert_eq!(
-            DirectionDuration(0 - 50).decode(10),
+            DirectionDuration(loop_count_start(Direction::CounterClockwise) - 50).decode(10),
             (Direction::CounterClockwise, Duration::from_micros(65))
         );
     }
     #[test]
     fn decrimenting() {
         assert_eq!(
-            DirectionDuration(((1u32 << 31) - 50) as i32).decode(10),
+            DirectionDuration((loop_count_start(Direction::Clockwise) - 50) as i32).decode(10),
             (Direction::Clockwise, Duration::from_micros(65))
         );
     }
