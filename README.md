@@ -1,3 +1,4 @@
+## Project Goals
 The goal of this library is to leverage the Pi Pico's Programmable IO to measure an encoder's velocity.
 This is a port of the Raspberry Pi Foundation's [Sub-Step Quadrature Encoder](https://github.com/raspberrypi/pico-examples/tree/master/pio/quadrature_encoder_substep) example code and is built on top of the [embassy-rp](https://github.com/embassy-rs/embassy/tree/main/embassy-rp)
 
@@ -7,3 +8,13 @@ For example, X ticks happened in 1 one second so the encoder is traveling at X t
 However this idea can break down at slow speeds due to quantization noise. 
 
 For a more complete break down of the problem and how this library address it see the Raspberry Pi Foundation's [README](https://github.com/raspberrypi/pico-examples/tree/master/pio/quadrature_encoder_substep)
+
+## Project Structure
+
+The project is split into two parts
+- logic
+    Contains all the computation/encoding logic.
+- pio_speed_encoder
+    Contains the logic for loading/starting the PIO program.
+
+The primary goal of this split was to enable me to run the unit tests (found in logic) on a normal (non-embedded) device.
