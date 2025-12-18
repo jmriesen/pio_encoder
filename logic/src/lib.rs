@@ -105,7 +105,13 @@ impl EncoderState {
     }
 }
 
+/// A speed encoder
+///
+/// This trait exists as a seam so that a mock encoder can be injected when unit testing application
+/// code.
 pub trait Encoder {
+    // Update is used by the encoder to update its internal state.
+    // It should be called regularly.
     fn update(&mut self);
     fn speed(&self) -> Speed;
     fn position(&self) -> SubStep;
