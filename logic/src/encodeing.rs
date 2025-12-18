@@ -132,8 +132,8 @@ pub struct DirectionDuration(pub i32);
 // The value that means 0 PIO loops since last step.
 fn loop_count_start(direction: Direction) -> i32 {
     match direction {
-        Direction::Clockwise => 0,
-        Direction::CounterClockwise => i32::MIN,
+        Direction::CounterClockwise => 0,
+        Direction::Clockwise => i32::MIN,
     }
 }
 impl DirectionDuration {
@@ -188,7 +188,7 @@ mod tests {
     #[test]
     fn decrimenting() {
         assert_eq!(
-            DirectionDuration((loop_count_start(Direction::Clockwise) - 50) as i32).decode(10),
+            DirectionDuration(loop_count_start(Direction::Clockwise).wrapping_sub(50)).decode(10),
             (Direction::Clockwise, Duration::from_micros(65))
         );
     }
