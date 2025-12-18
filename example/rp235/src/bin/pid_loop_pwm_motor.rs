@@ -8,7 +8,7 @@ use embassy_rp::{
     pio::{InterruptHandler, Pio},
     pwm::{Config, Pwm, SetDutyCycle},
 };
-use embassy_time::Timer;
+use embassy_time::{Duration, Timer};
 use pid::Pid;
 use pio_speed_encoder::Encoder;
 use pio_speed_encoder::substep_version::{PioEncoder, PioEncoderProgram};
@@ -51,7 +51,8 @@ async fn main(_spawner: Spawner) {
         info!("ticks {}", encoder.ticks());
         info!("speed{}", encoder.speed());
         encoder.update();
-        let output = pid.next_control_output(encoder.speed().ticks_per_second() as f32);
+        let output =
+            pid.next_control_output((encoder.speed() * Duration::from_secs(1)).val() as f32);
         pwm.set_duty_cycle(output.output as u16).unwrap();
         Timer::after_millis(10).await;
     }
