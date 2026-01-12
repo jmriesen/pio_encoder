@@ -18,6 +18,7 @@ pub struct Measurement {
     /// The time when this measurement was read from the pio.
     pub sample_instant: embassy_time::Instant,
 }
+
 impl Measurement {
     pub fn new(
         dir_dur: DirectionDuration,
@@ -75,18 +76,18 @@ pub fn calculate_speed_bounds(
     //2) The step_instance to the current measurement time
     //Using the longer delta time gives less uncertainty in our estimates
     if first_measurement_in_step && previous_sample_is_farther_away {
-        let (lower_bound, upper_bound) = previous.step.bounds(cali);
+        let range = previous.step.substep_range(cali);
         //NOTE: this is (initial - final) rather than (final-initial) to compensate for the fact
         //that embassy doesn't support negative durations.
         (
-            Speed::new(measured_position - upper_bound, time_to_last_measurement),
-            Speed::new(measured_position - lower_bound, time_to_last_measurement),
+            Speed::new(measured_position - range.end, time_to_last_measurement),
+            Speed::new(measured_position - range.start, time_to_last_measurement),
         )
     } else {
-        let (lower_bound, upper_bound) = current.step.bounds(cali);
+        let range = current.step.substep_range(cali);
         (
-            Speed::new(lower_bound - measured_position, time_to_current_measurement),
-            Speed::new(upper_bound - measured_position, time_to_current_measurement),
+            Speed::new(range.start - measured_position, time_to_current_measurement),
+            Speed::new(range.end - measured_position, time_to_current_measurement),
         )
     }
 }

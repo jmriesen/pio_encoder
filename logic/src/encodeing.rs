@@ -2,16 +2,19 @@ use super::Direction;
 use crate::CalibrationData;
 use core::{
     num::Wrapping,
-    ops::{Add, Sub},
+    ops::{Add, Range, Sub},
 };
-
 use embassy_time::Duration;
+
+/// The number of clock cycles it takes for the pio loop to for one iteration.
+///
 /// The pio program always takes 13 clock cycles for each loop.
 const LOOP_DURATION: u32 = 13;
 
 ///An encoder step. (4 steps per encoder cycle)
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub struct Step(Wrapping<u32>);
+/// 4 `Step` = 1 cycle = 255 `SubStep`s.
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub struct SubStep(Wrapping<u32>);
 
@@ -45,24 +48,25 @@ impl Step {
         //Get raw steps remainder when divided by 4
         (self.0.0 & 3) as usize
     }
-    pub fn lower_bound(self, calibration: &CalibrationData) -> SubStep {
-        self.start_position(calibration)
-    }
-    pub fn upper_bound(self, calibration: &CalibrationData) -> SubStep {
-        Self(self.0 + Wrapping(1)).start_position(calibration)
-    }
-    //returns both (lower_bound,upper_bound)
-    pub fn bounds(&self, calibration: &CalibrationData) -> (SubStep, SubStep) {
-        (self.lower_bound(calibration), self.upper_bound(calibration))
-    }
 
-    fn start_position(self, calibration: &CalibrationData) -> SubStep {
+    pub fn lower_bound(self, calibration: &CalibrationData) -> SubStep {
         //Extract the whole number of cycles
         let whole_cycles = self.0 / Wrapping(4);
         let partial_cycle = Wrapping(u32::from(calibration[self.phase()]));
         SubStep((whole_cycles << 8) + partial_cycle)
     }
-    pub fn val(&self) -> i32 {
+    pub fn upper_bound(self, calibration: &CalibrationData) -> SubStep {
+        Self(self.0 + Wrapping(1)).lower_bound(calibration)
+    }
+
+    pub fn substep_range(&self, calibration: &CalibrationData) -> Range<SubStep> {
+        Range {
+            start: self.lower_bound(calibration),
+            end: self.upper_bound(calibration),
+        }
+    }
+
+    pub fn raw(&self) -> i32 {
         #[allow(
             clippy::cast_possible_wrap,
             reason = "Inverting cast done in constructor"
@@ -196,8 +200,8 @@ mod tests {
     #[test]
     fn lower_upper_bounds() {
         assert_eq!(
-            Step::new(-4).bounds(&EQUAL_STEPS),
-            (SubStep::new(-256), SubStep::new(-192))
+            Step::new(-4).substep_range(&EQUAL_STEPS),
+            SubStep::new(-256)..SubStep::new(-192)
         );
         assert_eq!(Step::new(-3).lower_bound(&EQUAL_STEPS), SubStep::new(-192));
         assert_eq!(Step::new(-2).lower_bound(&EQUAL_STEPS), SubStep::new(-128));
@@ -213,9 +217,9 @@ mod tests {
     fn into_i32() {
         //This test is here to confirm we can convert between our internal representation and
         //external representation
-        assert_eq!(Step::new(-1).val(), -1);
-        assert_eq!(Step::new(0).val(), 0);
-        assert_eq!(Step::new(1).val(), 1);
+        assert_eq!(Step::new(-1).raw(), -1);
+        assert_eq!(Step::new(0).raw(), 0);
+        assert_eq!(Step::new(1).raw(), 1);
     }
     #[test]
     fn sub_step_arithmatic() {
