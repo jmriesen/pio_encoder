@@ -52,7 +52,7 @@ async fn main(_spawner: Spawner) {
         info!("speed{}", encoder.speed());
         encoder.update();
         let output =
-            pid.next_control_output((encoder.speed() * Duration::from_secs(1)).val() as f32);
+            pid.next_control_output((encoder.speed() * Duration::from_secs(1)).raw() as f32);
         pwm.set_duty_cycle(output.output as u16).unwrap();
         Timer::after_millis(10).await;
     }
