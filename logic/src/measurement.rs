@@ -1,3 +1,5 @@
+use core::ops::Range;
+
 use crate::{
     CalibrationData, Direction,
     encodeing::{DirectionDuration, Step, SubStep},
@@ -44,52 +46,52 @@ impl Measurement {
     }
 }
 
-pub fn calculate_speed(
-    previous: Measurement,
-    current: Measurement,
-    calibration_data: &CalibrationData,
-) -> Speed {
-    Speed::new(
-        current.measured_position(calibration_data) - previous.measured_position(calibration_data),
-        current.step_instant - previous.step_instant,
-    )
-}
-
-/// Calculate the lower and upper speed bounds giving the current and previous measurements
-pub fn calculate_speed_bounds(
-    previous: Measurement,
-    current: Measurement,
-    cali: &[u8; 4],
-) -> (Speed, Speed) {
-    let measured_position = current.measured_position(cali);
-    let first_measurement_in_step = current.step_instant > previous.sample_instant;
-
-    let time_to_last_measurement = if first_measurement_in_step {
-        current.step_instant - previous.sample_instant
-    } else {
-        previous.sample_instant - current.step_instant
-    };
-    let time_to_current_measurement = current.sample_instant - current.step_instant;
-    let previous_sample_is_farther_away = time_to_last_measurement > time_to_current_measurement;
-    //If this is the first measurement in this encoder step we have two time frames we could chose
-    //from:
-    //1) Previous measurement to the step_instance.
-    //2) The step_instance to the current measurement time
-    //Using the longer delta time gives less uncertainty in our estimates
-    if first_measurement_in_step && previous_sample_is_farther_away {
-        let range = previous.step.substep_range(cali);
-        //NOTE: this is (initial - final) rather than (final-initial) to compensate for the fact
-        //that embassy doesn't support negative durations.
-        (
-            Speed::new(measured_position - range.end, time_to_last_measurement),
-            Speed::new(measured_position - range.start, time_to_last_measurement),
+impl Measurement {
+    pub fn calculate_speed(
+        previous: Measurement,
+        current: Measurement,
+        calibration_data: &CalibrationData,
+    ) -> Speed {
+        Speed::new(
+            current.measured_position(calibration_data)
+                - previous.measured_position(calibration_data),
+            current.step_instant - previous.step_instant,
         )
-    } else {
-        let range = current.step.substep_range(cali);
-        (
-            Speed::new(range.start - measured_position, time_to_current_measurement),
-            Speed::new(range.end - measured_position, time_to_current_measurement),
-        )
+    }
+
+    /// Calculate the lower and upper speed bounds giving the current and previous measurements
+    pub fn calculate_speed_bounds(
+        previous: Measurement,
+        current: Measurement,
+        cali: &[u8; 4],
+    ) -> Range<Speed> {
+        let measured_position = current.measured_position(cali);
+        let first_measurement_in_step = current.step_instant > previous.sample_instant;
+
+        let time_to_last_measurement = if first_measurement_in_step {
+            current.step_instant - previous.sample_instant
+        } else {
+            previous.sample_instant - current.step_instant
+        };
+        let time_to_current_measurement = current.sample_instant - current.step_instant;
+        let previous_sample_is_farther_away =
+            time_to_last_measurement > time_to_current_measurement;
+        //If this is the first measurement in this encoder step we have two time frames we could chose
+        //from:
+        //1) Previous measurement to the step_instance.
+        //2) The step_instance to the current measurement time
+        //Using the longer delta time gives less uncertainty in our estimates
+        if first_measurement_in_step && previous_sample_is_farther_away {
+            let range = previous.step.substep_range(cali);
+            //NOTE: this is (initial - final) rather than (final-initial) to compensate for the fact
+            //that embassy doesn't support negative durations.
+            Speed::new(measured_position - range.end, time_to_last_measurement)
+                ..Speed::new(measured_position - range.start, time_to_last_measurement)
+        } else {
+            let range = current.step.substep_range(cali);
+            Speed::new(range.start - measured_position, time_to_current_measurement)
+                ..Speed::new(range.end - measured_position, time_to_current_measurement)
+        }
     }
 }
 #[cfg(test)]
@@ -118,7 +120,7 @@ mod tests {
         let delta = Duration::from_millis(10);
         let last_known_position_time = Instant::from_millis(30);
         //NOTE: specificity starting at two rather than zero to avoid the issues that x + 0 = x - 0
-        let speed = calculate_speed_bounds(
+        let speed = Measurement::calculate_speed_bounds(
             Measurement {
                 step: Step::new(2),
                 direction: Direction::Clockwise,
@@ -137,10 +139,7 @@ mod tests {
         );
         assert_eq!(
             speed,
-            (
-                Speed::new(SubStep::new(64 * 9), delta),
-                Speed::new(SubStep::new(64 * 10), delta)
-            )
+            Speed::new(SubStep::new(64 * 9), delta)..Speed::new(SubStep::new(64 * 10), delta)
         );
     }
     #[test]
@@ -149,7 +148,7 @@ mod tests {
         //we completely ignore the previous measurement
         let delta = Duration::from_millis(10);
         let last_known_position_time = Instant::from_millis(30);
-        let speed = calculate_speed_bounds(
+        let speed = Measurement::calculate_speed_bounds(
             Measurement {
                 step: Step::new(0),
                 direction: Direction::Clockwise,
@@ -166,15 +165,12 @@ mod tests {
         );
         assert_eq!(
             speed,
-            (
-                Speed::new(SubStep::new(0), delta),
-                Speed::new(SubStep::new(64), delta)
-            )
+            Speed::new(SubStep::new(0), delta)..Speed::new(SubStep::new(64), delta)
         );
     }
     #[test]
     fn speed_calculation() {
-        let speed = calculate_speed(
+        let speed = Measurement::calculate_speed(
             Measurement {
                 step: Step::new(10),
                 direction: Direction::Clockwise,
@@ -196,7 +192,7 @@ mod tests {
     }
     #[test]
     fn testing_inter_step_bounds() {
-        let speed = calculate_speed_bounds(
+        let speed = Measurement::calculate_speed_bounds(
             Measurement {
                 step: Step::new(3),
                 direction: Direction::Clockwise,
@@ -213,10 +209,8 @@ mod tests {
         );
         assert_eq!(
             speed,
-            (
-                Speed::new(SubStep::new(0), Duration::from_millis(10)),
-                Speed::new(SubStep::new(64), Duration::from_millis(5))
-            )
+            Speed::new(SubStep::new(0), Duration::from_millis(10))
+                ..Speed::new(SubStep::new(64), Duration::from_millis(5))
         )
     }
 }

@@ -11,7 +11,6 @@ pub use speed::Speed;
 mod measurement;
 pub use encodeing::DirectionDuration;
 pub use measurement::Measurement;
-use measurement::{calculate_speed, calculate_speed_bounds};
 
 type CalibrationData = [u8; 4];
 /// Default calibration value that assumes each encoder tick is the same size
@@ -63,16 +62,24 @@ impl EncoderState {
             0
         };
         let speed = {
-            let (speed_lower_bound, speed_upper_bound) =
-                calculate_speed_bounds(self.prev_measurement, new_data, &self.calibration_data);
+            let speed_bounds = Measurement::calculate_speed_bounds(
+                self.prev_measurement,
+                new_data,
+                &self.calibration_data,
+            );
+
             if self.is_stopped() {
                 Speed::stopped()
             } else if self.prev_measurement.step != new_data.step {
-                calculate_speed(self.prev_measurement, new_data, &self.calibration_data)
+                Measurement::calculate_speed(
+                    self.prev_measurement,
+                    new_data,
+                    &self.calibration_data,
+                )
             } else {
                 self.speed
             }
-            .clamp(speed_lower_bound, speed_upper_bound)
+            .clamp(speed_bounds.start, speed_bounds.end)
         };
 
         let position = self
