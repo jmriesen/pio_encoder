@@ -93,11 +93,48 @@ impl Measurement {
     }
 }
 #[cfg(test)]
-mod tests {
+pub mod tests {
     use crate::EQUAL_STEPS;
 
     use super::*;
     use embassy_time::Duration;
+    pub enum Event {
+        Step(i32),
+        Mesurement,
+    }
+    /// Takes a sequence of measurement/hardware events and converts them into mesurements the pio
+    /// state machine would generate.
+    pub fn sequence_events(
+        inital_conditions: (Step, Direction, Instant),
+        events: impl IntoIterator<Item = (Instant, Event)>,
+    ) -> Vec<Measurement> {
+        use Direction::*;
+        let mut current_step = inital_conditions.0;
+        let mut current_dir = inital_conditions.1;
+        let mut step_time = inital_conditions.2;
+        let mut mesurements = vec![];
+        for (time, event) in events {
+            match event {
+                Event::Step(step) => {
+                    let step = Step::new(step);
+                    current_dir = match step.cmp(&current_step) {
+                        std::cmp::Ordering::Less => CounterClockwise,
+                        std::cmp::Ordering::Equal => current_dir,
+                        std::cmp::Ordering::Greater => Clockwise,
+                    };
+                    current_step = step;
+                    step_time = time
+                }
+                Event::Mesurement => mesurements.push(Measurement {
+                    step: current_step,
+                    direction: current_dir,
+                    step_instant: step_time,
+                    sample_instant: time,
+                }),
+            }
+        }
+        mesurements
+    }
 
     #[test]
     fn construct_measurement_from_data() {
@@ -117,24 +154,18 @@ mod tests {
     fn last_smaple_time_is_further_away_from_step_time() {
         let delta = Duration::from_millis(10);
         let last_known_position_time = Instant::from_millis(30);
+
         //NOTE: specificity starting at two rather than zero to avoid the issues that x + 0 = x - 0
-        let speed = Measurement::calculate_speed_bounds(
-            Measurement {
-                step: Step::new(2),
-                direction: Direction::Clockwise,
-                //NOTE: This step time does not matter
-                step_instant: Instant::from_millis(0),
-                sample_instant: last_known_position_time - delta,
-            },
-            Measurement {
-                step: Step::new(12),
-                direction: Direction::Clockwise,
-                //NOTE: This is the step time we care about.
-                step_instant: last_known_position_time,
-                sample_instant: last_known_position_time + delta / 2,
-            },
-            &EQUAL_STEPS,
+        let mesurements = sequence_events(
+            (Step::new(2), Direction::Clockwise, Instant::from_millis(0)),
+            vec![
+                (last_known_position_time - delta, Event::Mesurement),
+                (last_known_position_time, Event::Step(12)),
+                (last_known_position_time + delta / 2, Event::Mesurement),
+            ],
         );
+        let speed =
+            Measurement::calculate_speed_bounds(mesurements[0], mesurements[1], &EQUAL_STEPS);
         assert_eq!(
             speed,
             Speed::new(SubStep::new(64 * 9), delta)..Speed::new(SubStep::new(64 * 10), delta)
@@ -142,73 +173,86 @@ mod tests {
     }
     #[test]
     fn current_smaple_time_is_further_away_from_step_time() {
-        //Since the larger time windows is withing the step,
-        //we completely ignore the previous measurement
         let delta = Duration::from_millis(10);
         let last_known_position_time = Instant::from_millis(30);
-        let speed = Measurement::calculate_speed_bounds(
-            Measurement {
-                step: Step::new(0),
-                direction: Direction::Clockwise,
-                step_instant: Instant::from_millis(0),
-                sample_instant: last_known_position_time - delta / 2,
-            },
-            Measurement {
-                step: Step::new(10),
-                direction: Direction::Clockwise,
-                step_instant: last_known_position_time,
-                sample_instant: last_known_position_time + delta,
-            },
-            &EQUAL_STEPS,
+
+        //NOTE: specificity starting at two rather than zero to avoid the issues that x + 0 = x - 0
+        let mesurements = sequence_events(
+            (Step::new(0), Direction::Clockwise, Instant::from_millis(0)),
+            vec![
+                //Since the larger time windows is withing the step,
+                //we completely ignore the previous measurement
+                (last_known_position_time - delta / 2, Event::Mesurement),
+                (last_known_position_time, Event::Step(10)),
+                (last_known_position_time + delta, Event::Mesurement),
+            ],
         );
+
+        let speed =
+            Measurement::calculate_speed_bounds(mesurements[0], mesurements[1], &EQUAL_STEPS);
         assert_eq!(
             speed,
             Speed::new(SubStep::new(0), delta)..Speed::new(SubStep::new(64), delta)
         );
     }
+
     #[test]
     fn speed_calculation() {
-        let speed = Measurement::calculate_speed(
-            Measurement {
-                step: Step::new(10),
-                direction: Direction::Clockwise,
-                step_instant: Instant::from_millis(10),
-                sample_instant: Instant::from_millis(10),
-            },
-            Measurement {
-                step: Step::new(20),
-                direction: Direction::Clockwise,
-                step_instant: Instant::from_millis(20),
-                sample_instant: Instant::from_millis(20),
-            },
-            &EQUAL_STEPS,
+        let mesurements = sequence_events(
+            (
+                Step::new(10),
+                Direction::Clockwise,
+                Instant::from_millis(10),
+            ),
+            vec![
+                (Instant::from_millis(10), Event::Mesurement),
+                (Instant::from_millis(20), Event::Step(20)),
+                (Instant::from_millis(20), Event::Mesurement),
+            ],
         );
         assert_eq!(
-            speed,
+            Measurement::calculate_speed(mesurements[0], mesurements[1], &EQUAL_STEPS,),
             Speed::new(SubStep::new(10 * 64), Duration::from_millis(10))
-        )
+        );
     }
+
     #[test]
-    fn testing_inter_step_bounds() {
-        let speed = Measurement::calculate_speed_bounds(
-            Measurement {
-                step: Step::new(3),
-                direction: Direction::Clockwise,
-                step_instant: Instant::from_millis(0),
-                sample_instant: Instant::from_millis(0),
-            },
-            Measurement {
-                step: Step::new(3),
-                direction: Direction::Clockwise,
-                step_instant: Instant::from_millis(0),
-                sample_instant: Instant::from_millis(5),
-            },
-            &EQUAL_STEPS,
+    fn testing_intar_step_bounds() {
+        let mesurements = sequence_events(
+            (Step::new(0), Direction::Clockwise, Instant::from_millis(0)),
+            vec![
+                //Start moving clockwise.
+                (Instant::from_millis(10), Event::Step(3)),
+                //Take two mesurements without a tick between them
+                (Instant::from_millis(20), Event::Mesurement),
+                (Instant::from_millis(30), Event::Mesurement), // 20 ms since step
+                (Instant::from_millis(40), Event::Mesurement), // 30 ms since step
+                //Start moving clockwise counter clockwise.
+                (Instant::from_millis(50), Event::Step(2)),
+                //Take two mesurements without a tick between them
+                (Instant::from_millis(60), Event::Mesurement),
+                (Instant::from_millis(70), Event::Mesurement), // 20 ms since step
+                (Instant::from_millis(80), Event::Mesurement), // 30 ms since step
+            ],
+        );
+        //Moving clockwise
+        assert_eq!(
+            Measurement::calculate_speed_bounds(mesurements[0], mesurements[1], &EQUAL_STEPS),
+            Speed::stopped()..Speed::new(SubStep::new(64), Duration::from_millis(20))
         );
         assert_eq!(
-            speed,
-            Speed::new(SubStep::new(0), Duration::from_millis(10))
-                ..Speed::new(SubStep::new(64), Duration::from_millis(5))
-        )
+            Measurement::calculate_speed_bounds(mesurements[1], mesurements[2], &EQUAL_STEPS),
+            Speed::stopped()..Speed::new(SubStep::new(64), Duration::from_millis(30))
+        );
+
+        //Moving counterclockwise
+        assert_eq!(
+            Measurement::calculate_speed_bounds(mesurements[3], mesurements[4], &EQUAL_STEPS),
+            Speed::new(SubStep::new(-64), Duration::from_millis(20))..Speed::stopped()
+        );
+        assert_eq!(
+            Measurement::calculate_speed_bounds(mesurements[4], mesurements[5], &EQUAL_STEPS),
+            Speed::new(SubStep::new(-64), Duration::from_millis(30))..Speed::stopped()
+        );
     }
 }

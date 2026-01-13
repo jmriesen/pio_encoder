@@ -128,51 +128,16 @@ pub trait Encoder {
 #[cfg(test)]
 mod tests {
     use crate::{
-        Direction::{self, Clockwise, CounterClockwise},
+        Direction::Clockwise,
         EQUAL_STEPS, EncoderState, IDLE_STOP_SAMPLES,
         encodeing::{Step, SubStep},
-        measurement::Measurement,
+        measurement::{
+            Measurement,
+            tests::{Event, sequence_events},
+        },
         speed::Speed,
     };
     use embassy_time::{Duration, Instant};
-
-    enum Event {
-        Step(i32),
-        Mesurement,
-    }
-
-    /// Takes a sequence of measurement/hardware events and converts them into mesurements the pio
-    /// state machine would generate.
-    fn sequence_events(
-        inital_conditions: (Step, Direction, Instant),
-        events: impl IntoIterator<Item = (Instant, Event)>,
-    ) -> Vec<Measurement> {
-        let mut current_step = inital_conditions.0;
-        let mut current_dir = inital_conditions.1;
-        let mut step_time = inital_conditions.2;
-        let mut mesurements = vec![];
-        for (time, event) in events {
-            match event {
-                Event::Step(step) => {
-                    let step = Step::new(step);
-                    current_dir = match step.cmp(&current_step) {
-                        std::cmp::Ordering::Less => CounterClockwise,
-                        std::cmp::Ordering::Equal => current_dir,
-                        std::cmp::Ordering::Greater => Clockwise,
-                    };
-                    current_step = step;
-                    step_time = time
-                }
-                Event::Mesurement => mesurements.push(Measurement {
-                    step: current_step,
-                    direction: current_dir,
-                    step_instant: step_time,
-                    sample_instant: time,
-                }),
-            }
-        }
-        mesurements
-    }
 
     #[test]
     fn testing_is_stoped() {
