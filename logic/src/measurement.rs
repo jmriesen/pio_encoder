@@ -43,6 +43,7 @@ impl Measurement {
         }
     }
 }
+
 pub fn calculate_speed(
     previous: Measurement,
     current: Measurement,

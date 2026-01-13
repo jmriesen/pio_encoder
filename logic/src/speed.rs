@@ -41,7 +41,7 @@ fn clamp_cast(value: i64) -> i32 {
 impl Speed {
     ///Create a new speed reading.
     pub fn new(delta: SubStep, duration: Duration) -> Self {
-        let sub_steps = i64::from(delta.val());
+        let sub_steps = i64::from(delta.raw());
         let micro_seconds = duration.as_micros();
         if micro_seconds > i64::MAX as u64 {
             //Division would round to zero

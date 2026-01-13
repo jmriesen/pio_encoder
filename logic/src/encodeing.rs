@@ -19,9 +19,9 @@ pub struct Step(Wrapping<u32>);
 pub struct SubStep(Wrapping<u32>);
 
 #[cfg(feature = "defmt")]
-//NOTE: I have created a pull request for wrapping to impl defmt::format.
-//It should be present in the next defmt release.
-//If so this impl can be defeated
+/// NOTE: I have created a pull request for wrapping to impl defmt::format.
+/// It should be present in the next defmt release.
+/// If so this impl can be defeated
 mod defmt_impl {
     use super::*;
     impl defmt::Format for Step {
@@ -85,7 +85,7 @@ impl SubStep {
         )]
         Self(Wrapping(step as u32))
     }
-    pub fn val(&self) -> i32 {
+    pub fn raw(&self) -> i32 {
         #[allow(
             clippy::cast_possible_wrap,
             reason = "Inverting cast done in constructor"
@@ -96,6 +96,8 @@ impl SubStep {
     }
 }
 
+// TODO: adding role over will not be the same foe subsets and steps.
+// Will this cause problems?
 impl Sub for SubStep {
     type Output = Self;
 
@@ -103,6 +105,7 @@ impl Sub for SubStep {
         Self(self.0 - rhs.0)
     }
 }
+
 impl Add for SubStep {
     type Output = Self;
 
@@ -126,7 +129,7 @@ impl Add for SubStep {
 ///
 /// However, overflows will not cause any faulty readings.
 /// The duration is not used in speed calculations if the encoder is in a stopped state.
-/// The caller of the crate is reasonable for repeatedly calling the update function,
+/// The caller of the crate is responsible for repeatedly calling the update function,
 /// (10hz at least)
 /// so we will always be in a stopped state before an overflow could occur.
 /// Represents the encoders current direction and how many PIO loop has run since the last step.
@@ -140,6 +143,7 @@ fn loop_count_start(direction: Direction) -> i32 {
         Direction::Clockwise => i32::MIN,
     }
 }
+
 impl DirectionDuration {
     pub fn new(val: i32) -> Self {
         Self(val)
@@ -155,7 +159,7 @@ impl DirectionDuration {
         let iterations = {
             #[expect(
                 clippy::cast_sign_loss,
-                reason = "sign infomation is used to store direction and has allrady been extracted"
+                reason = "sign infomation is used to store direction and has already been extracted"
             )]
             {
                 iterations as u32

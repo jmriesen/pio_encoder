@@ -1,16 +1,11 @@
+//! This crate contains all the logic assisted with parsing pio messages and calculating speed.
+//! This crate specificity does **not** depend on embassy-rs.
+//! Depending on embassy-rs would prevent me from running the unit test on my base machine.
 #![cfg_attr(not(test), no_std)]
 #![warn(clippy::pedantic)]
 #![allow(clippy::must_use_candidate)]
 pub use encodeing::{Step, SubStep};
-
 pub mod encodeing;
-
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-#[cfg_attr(feature = "defmt", derive(defmt::Format))]
-pub enum Direction {
-    Clockwise,
-    CounterClockwise,
-}
 mod speed;
 pub use speed::Speed;
 mod measurement;
@@ -23,6 +18,13 @@ type CalibrationData = [u8; 4];
 const EQUAL_STEPS: CalibrationData = [0, 64, 128, 192];
 /// The number of samples that need to be read before we conclude the encoder has stopped.
 const IDLE_STOP_SAMPLES: u32 = 3;
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub enum Direction {
+    Clockwise,
+    CounterClockwise,
+}
 
 /// Stores all the logical state required for the sub-step encoder.
 ///
