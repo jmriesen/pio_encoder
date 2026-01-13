@@ -119,7 +119,12 @@ pub mod tests {
                     let step = Step::new(step);
                     current_dir = match step.cmp(&current_step) {
                         std::cmp::Ordering::Less => CounterClockwise,
-                        std::cmp::Ordering::Equal => current_dir,
+                        // If we have crossed back over the last transition point the direction of
+                        // travel has flipped
+                        std::cmp::Ordering::Equal => match current_dir {
+                            Clockwise => CounterClockwise,
+                            CounterClockwise => Clockwise,
+                        },
                         std::cmp::Ordering::Greater => Clockwise,
                     };
                     current_step = step;
@@ -151,49 +156,59 @@ pub mod tests {
     }
 
     #[test]
-    fn last_smaple_time_is_further_away_from_step_time() {
-        let delta = Duration::from_millis(10);
-        let last_known_position_time = Instant::from_millis(30);
+    fn always_use_larger_delta_time_for_estiments() {
+        let step_time = Instant::from_millis(30);
+        let smaller_delta = Duration::from_millis(5);
+        let larger_delta = Duration::from_millis(10);
+        let start = Step::new(5);
+        let end = Step::new(15);
+        {
+            // larger delta happens first
+            let mesurements = sequence_events(
+                (Step::new(5), Direction::Clockwise, Instant::from_millis(0)),
+                vec![
+                    (step_time - larger_delta, Event::Mesurement),
+                    //Larger delta time.
+                    (step_time, Event::Step(15)),
+                    //Smaller delta time.
+                    (step_time + smaller_delta, Event::Mesurement),
+                ],
+            );
+            assert_eq!(
+                Measurement::calculate_speed_bounds(mesurements[0], mesurements[1], &EQUAL_STEPS),
+                Speed::new(
+                    end.lower_bound(&EQUAL_STEPS) - start.upper_bound(&EQUAL_STEPS),
+                    larger_delta
+                )
+                    ..Speed::new(
+                        end.upper_bound(&EQUAL_STEPS) - start.upper_bound(&EQUAL_STEPS),
+                        larger_delta
+                    )
+            );
+        }
+        {
+            // Smaller delta happens first
+            let mesurements = sequence_events(
+                (Step::new(5), Direction::Clockwise, Instant::from_millis(0)),
+                vec![
+                    (step_time - smaller_delta, Event::Mesurement),
+                    //Larger delta time.
+                    (step_time, Event::Step(15)),
+                    //Smaller delta time.
+                    (step_time + larger_delta, Event::Mesurement),
+                ],
+            );
 
-        //NOTE: specificity starting at two rather than zero to avoid the issues that x + 0 = x - 0
-        let mesurements = sequence_events(
-            (Step::new(2), Direction::Clockwise, Instant::from_millis(0)),
-            vec![
-                (last_known_position_time - delta, Event::Mesurement),
-                (last_known_position_time, Event::Step(12)),
-                (last_known_position_time + delta / 2, Event::Mesurement),
-            ],
-        );
-        let speed =
-            Measurement::calculate_speed_bounds(mesurements[0], mesurements[1], &EQUAL_STEPS);
-        assert_eq!(
-            speed,
-            Speed::new(SubStep::new(64 * 9), delta)..Speed::new(SubStep::new(64 * 10), delta)
-        );
-    }
-    #[test]
-    fn current_smaple_time_is_further_away_from_step_time() {
-        let delta = Duration::from_millis(10);
-        let last_known_position_time = Instant::from_millis(30);
-
-        //NOTE: specificity starting at two rather than zero to avoid the issues that x + 0 = x - 0
-        let mesurements = sequence_events(
-            (Step::new(0), Direction::Clockwise, Instant::from_millis(0)),
-            vec![
-                //Since the larger time windows is withing the step,
-                //we completely ignore the previous measurement
-                (last_known_position_time - delta / 2, Event::Mesurement),
-                (last_known_position_time, Event::Step(10)),
-                (last_known_position_time + delta, Event::Mesurement),
-            ],
-        );
-
-        let speed =
-            Measurement::calculate_speed_bounds(mesurements[0], mesurements[1], &EQUAL_STEPS);
-        assert_eq!(
-            speed,
-            Speed::new(SubStep::new(0), delta)..Speed::new(SubStep::new(64), delta)
-        );
+            assert_eq!(
+                Measurement::calculate_speed_bounds(mesurements[0], mesurements[1], &EQUAL_STEPS),
+                Speed::stopped()
+                    ..Speed::new(
+                        Step::new(end.raw() + 1).upper_bound(&EQUAL_STEPS)
+                            - end.upper_bound(&EQUAL_STEPS),
+                        larger_delta
+                    )
+            );
+        }
     }
 
     #[test]
