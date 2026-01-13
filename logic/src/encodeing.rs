@@ -24,11 +24,13 @@ pub struct SubStep(Wrapping<u32>);
 /// If so this impl can be defeated
 mod defmt_impl {
     use super::*;
+    #[mutants::skip]
     impl defmt::Format for Step {
         fn format(&self, fmt: defmt::Formatter) {
             self.0.0.format(fmt);
         }
     }
+    #[mutants::skip]
     impl defmt::Format for SubStep {
         fn format(&self, fmt: defmt::Formatter) {
             self.0.0.format(fmt);
