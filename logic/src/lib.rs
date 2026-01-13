@@ -82,9 +82,7 @@ impl EncoderState {
             .clamp(speed_bounds.start, speed_bounds.end)
         };
 
-        let position = self
-            .prev_measurement
-            .measured_position(&self.calibration_data)
+        let position = self.prev_measurement.transition(&self.calibration_data)
             + speed * (new_data.sample_instant - new_data.step_instant);
         Self {
             calibration_data: self.calibration_data,
@@ -107,7 +105,7 @@ impl EncoderState {
             calibration_data,
             // set so we start in the stopped state.
             idle_stop_samples_count: IDLE_STOP_SAMPLES + 1,
-            position: inital_conditions.measured_position(&calibration_data),
+            position: inital_conditions.transition(&calibration_data),
             speed: Speed::stopped(),
             prev_measurement: inital_conditions,
         }
@@ -129,57 +127,122 @@ pub trait Encoder {
 
 #[cfg(test)]
 mod tests {
-    use embassy_time::{Duration, Instant};
-
     use crate::{
-        Direction::Clockwise,
+        Direction::{self, Clockwise, CounterClockwise},
         EQUAL_STEPS, EncoderState, IDLE_STOP_SAMPLES,
         encodeing::{Step, SubStep},
         measurement::Measurement,
         speed::Speed,
     };
+    use embassy_time::{Duration, Instant};
 
-    fn measurement(steps: Step, time: u64) -> Measurement {
-        Measurement {
-            step: steps,
-            direction: Clockwise,
-            step_instant: Instant::from_millis(time),
-            sample_instant: Instant::from_millis(time),
+    enum Event {
+        Step(i32),
+        Mesurement,
+    }
+
+    /// Takes a sequence of measurement/hardware events and converts them into mesurements the pio
+    /// state machine would generate.
+    fn sequence_events(
+        inital_conditions: (Step, Direction, Instant),
+        events: impl IntoIterator<Item = (Instant, Event)>,
+    ) -> Vec<Measurement> {
+        let mut current_step = inital_conditions.0;
+        let mut current_dir = inital_conditions.1;
+        let mut step_time = inital_conditions.2;
+        let mut mesurements = vec![];
+        for (time, event) in events {
+            match event {
+                Event::Step(step) => {
+                    let step = Step::new(step);
+                    current_dir = match step.cmp(&current_step) {
+                        std::cmp::Ordering::Less => CounterClockwise,
+                        std::cmp::Ordering::Equal => current_dir,
+                        std::cmp::Ordering::Greater => Clockwise,
+                    };
+                    current_step = step;
+                    step_time = time
+                }
+                Event::Mesurement => mesurements.push(Measurement {
+                    step: current_step,
+                    direction: current_dir,
+                    step_instant: step_time,
+                    sample_instant: time,
+                }),
+            }
         }
+        mesurements
     }
 
     #[test]
     fn testing_is_stoped() {
-        let mut encoder_state = EncoderState::new(measurement(Step::new(0), 0));
+        let mesurements = sequence_events(
+            (Step::new(0), Clockwise, Instant::from_millis(0)),
+            vec![
+                (Instant::from_millis(0), Event::Mesurement),
+                (Instant::from_millis(10), Event::Step(1)),
+                (Instant::from_millis(10), Event::Mesurement),
+            ]
+            .into_iter()
+            .chain(
+                (11..)
+                    .step_by(10)
+                    .into_iter()
+                    .map(|x| (Instant::from_millis(x), Event::Mesurement))
+                    .take(IDLE_STOP_SAMPLES as usize),
+            ),
+        );
+
+        let mut encoder_state = EncoderState::new(mesurements[0]);
         // we start off stopped
         assert!(encoder_state.is_stopped());
         // Start moving
-        encoder_state.update_state(measurement(Step::new(1), 10));
+        encoder_state.update_state(mesurements[1]);
         assert!(!encoder_state.is_stopped());
         // Next few readings don't show any movement
-        for i in 0..IDLE_STOP_SAMPLES as u64 {
+        for mesurement in &mesurements[2..] {
             assert!(!encoder_state.is_stopped());
-            encoder_state.update_state(measurement(Step::new(1), i * 10 + 11));
+            encoder_state.update_state(*mesurement);
         }
         assert!(encoder_state.is_stopped());
     }
 
     #[test]
     fn calculating_speed() {
-        let mut encoder_state = EncoderState::new(measurement(Step::new(0), 0));
+        let mesurements = sequence_events(
+            (Step::new(0), Clockwise, Instant::from_millis(0)),
+            vec![
+                (Instant::from_millis(0), Event::Mesurement),
+                (Instant::from_millis(10), Event::Step(1)),
+                (Instant::from_millis(10), Event::Mesurement),
+                (Instant::from_millis(20), Event::Step(2)),
+                (Instant::from_millis(20), Event::Mesurement),
+                (Instant::from_millis(30), Event::Step(4)),
+                (Instant::from_millis(30), Event::Mesurement),
+            ]
+            .into_iter()
+            .chain(
+                (11..)
+                    .step_by(10)
+                    .into_iter()
+                    .map(|x| (Instant::from_millis(x), Event::Mesurement))
+                    .take(IDLE_STOP_SAMPLES as usize),
+            ),
+        );
+        let mut encoder_state = EncoderState::new(mesurements[0]);
         assert_eq!(encoder_state.speed, Speed::stopped());
         // Start moving
-        encoder_state.update_state(measurement(Step::new(1), 10));
+        encoder_state.update_state(mesurements[1]);
         // There is a lag between first measurement that changes step and when we start "moving"
         // This delay is to insure the speed calculations have a valid previous position data.
         assert_eq!(encoder_state.speed, Speed::stopped());
-        encoder_state.update_state(measurement(Step::new(2), 20));
+        encoder_state.update_state(mesurements[2]);
         assert_eq!(
             encoder_state.speed,
             Speed::new(SubStep::new(64), Duration::from_millis(10))
         );
 
-        encoder_state.update_state(measurement(Step::new(4), 30));
+        encoder_state.update_state(mesurements[3]);
         assert_eq!(
             encoder_state.speed,
             Speed::new(SubStep::new(128), Duration::from_millis(10))
@@ -187,14 +250,24 @@ mod tests {
     }
     #[test]
     fn wait_for_multiple_readings_before_concluding_movement() {
+        let mesurements = sequence_events(
+            (Step::new(0), Clockwise, Instant::from_millis(0)),
+            vec![
+                (Instant::from_millis(0), Event::Mesurement),
+                (Instant::from_millis(10), Event::Step(1)),
+                (Instant::from_millis(10), Event::Mesurement),
+                (Instant::from_millis(20), Event::Step(1)),
+                (Instant::from_millis(20), Event::Mesurement),
+            ],
+        );
         // We need at least two in movement measurement to get a good speed estimate.
-        let mut encoder_state = EncoderState::new(measurement(Step::new(0), 0));
+        let mut encoder_state = EncoderState::new(mesurements[0]);
         assert_eq!(encoder_state.speed, Speed::stopped());
         // See a new tick
-        encoder_state.update_state(measurement(Step::new(1), 10));
+        encoder_state.update_state(mesurements[1]);
         assert_eq!(encoder_state.speed, Speed::stopped());
         // Stay on the current tick
-        encoder_state.update_state(measurement(Step::new(1), 20));
+        encoder_state.update_state(mesurements[2]);
         assert_eq!(
             encoder_state.speed,
             Speed::new(SubStep::new(0), Duration::from_millis(10))
@@ -203,36 +276,28 @@ mod tests {
 
     #[test]
     fn example_from_source_documentation() {
-        //This is the example taken from the readme of the original code.
+        //This is the example taken from the readme of the code.
         //https://github.com/raspberrypi/pico-examples/tree/master/pio/quadrature_encoder_substep
-        let mut encoder = EncoderState::new(Measurement {
-            step: Step::new(3),
-            direction: Clockwise,
-            step_instant: Instant::from_millis(0),
-            sample_instant: Instant::from_millis(0),
-        });
-        encoder.update_state(Measurement {
-            step: Step::new(4),
-            direction: Clockwise,
-            step_instant: Instant::from_millis(21),
-            sample_instant: Instant::from_millis(30),
-        });
-        encoder.update_state(Measurement {
-            step: Step::new(5),
-            direction: Clockwise,
-            step_instant: Instant::from_millis(34),
-            sample_instant: Instant::from_millis(40),
-        });
+        let mesurements = sequence_events(
+            (Step::new(3), Clockwise, Instant::from_millis(0)),
+            vec![
+                (Instant::from_millis(0), Event::Mesurement),
+                (Instant::from_millis(21), Event::Step(4)),
+                (Instant::from_millis(30), Event::Mesurement),
+                (Instant::from_millis(34), Event::Step(5)),
+                (Instant::from_millis(40), Event::Mesurement),
+                (Instant::from_millis(49), Event::Step(7)),
+                (Instant::from_millis(50), Event::Mesurement),
+            ],
+        );
+        let mut encoder = EncoderState::new(mesurements[0]);
+        encoder.update_state(mesurements[1]);
+        encoder.update_state(mesurements[2]);
         assert_eq!(
             encoder.speed,
             Speed::new(SubStep::new(64), Duration::from_millis(13))
         );
-        encoder.update_state(Measurement {
-            step: Step::new(7),
-            direction: Clockwise,
-            step_instant: Instant::from_millis(49),
-            sample_instant: Instant::from_millis(50),
-        });
+        encoder.update_state(mesurements[3]);
         assert_eq!(
             encoder.speed,
             Speed::new(SubStep::new(128), Duration::from_millis(15))
@@ -251,7 +316,7 @@ mod tests {
         // so the position estimate is just the initial measured position
         assert_eq!(
             encoder.position,
-            inital_measurement.measured_position(&EQUAL_STEPS)
+            inital_measurement.transition(&EQUAL_STEPS)
         )
     }
     /// Test helper function that initializes an encoder that is
@@ -259,11 +324,25 @@ mod tests {
     /// - Currently at step steps_per_10_millis *3
     /// - moving clockwise
     fn const_speed_encoder(steps_per_10_millis: i32) -> EncoderState {
-        let mut encoder = EncoderState::new(measurement(Step::new(0), 0));
+        //Renaming to something shorter so the formatter keeps each vec entry on one line;
+        let step_delta = steps_per_10_millis;
+        let mesurements = sequence_events(
+            (Step::new(0), Clockwise, Instant::from_millis(0)),
+            vec![
+                (Instant::from_millis(0), Event::Mesurement),
+                (Instant::from_millis(10), Event::Step(step_delta * 1)),
+                (Instant::from_millis(10), Event::Mesurement),
+                (Instant::from_millis(20), Event::Step(step_delta * 2)),
+                (Instant::from_millis(20), Event::Mesurement),
+                (Instant::from_millis(30), Event::Step(step_delta * 3)),
+                (Instant::from_millis(30), Event::Mesurement),
+            ],
+        );
+        let mut encoder = EncoderState::new(mesurements[0]);
         // Get the encoder moving at one step per 10 milliseconds
-        encoder.update_state(measurement(Step::new(steps_per_10_millis), 10));
-        encoder.update_state(measurement(Step::new(steps_per_10_millis * 2), 20));
-        encoder.update_state(measurement(Step::new(steps_per_10_millis * 3), 30));
+        for measurement in &mesurements[1..] {
+            encoder.update_state(*measurement);
+        }
         assert_eq!(
             encoder.speed,
             Speed::new(

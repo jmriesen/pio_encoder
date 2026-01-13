@@ -36,9 +36,8 @@ impl Measurement {
             sample_instant,
         }
     }
-    /// The last definitely known position.
-    /// Calculated based on the encoder tick and encoder direction.
-    pub fn measured_position(&self, calibration: &CalibrationData) -> SubStep {
+    /// The subset where the most recent step step occurred.
+    pub fn transition(&self, calibration: &CalibrationData) -> SubStep {
         match self.direction {
             Direction::Clockwise => self.step.lower_bound(calibration),
             Direction::CounterClockwise => self.step.upper_bound(calibration),
@@ -53,8 +52,7 @@ impl Measurement {
         calibration_data: &CalibrationData,
     ) -> Speed {
         Speed::new(
-            current.measured_position(calibration_data)
-                - previous.measured_position(calibration_data),
+            current.transition(calibration_data) - previous.transition(calibration_data),
             current.step_instant - previous.step_instant,
         )
     }
@@ -65,7 +63,7 @@ impl Measurement {
         current: Measurement,
         cali: &[u8; 4],
     ) -> Range<Speed> {
-        let measured_position = current.measured_position(cali);
+        let measured_position = current.transition(cali);
         let first_measurement_in_step = current.step_instant > previous.sample_instant;
 
         let time_to_last_measurement = if first_measurement_in_step {
