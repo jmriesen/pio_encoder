@@ -63,34 +63,38 @@ impl Measurement {
         current: Measurement,
         cali: &[u8; 4],
     ) -> Range<Speed> {
-        let measured_position = current.transition(cali);
-        let first_measurement_in_step = current.step_instant > previous.sample_instant;
+        let transition_point = current.transition(cali);
+        // Insure duration is always positive.
+        let delta_prev_to_t = duration_dif_abs(previous.sample_instant, current.step_instant);
+        let delta_t_to_current = current.sample_instant - current.step_instant;
 
-        let time_to_last_measurement = if first_measurement_in_step {
-            current.step_instant - previous.sample_instant
-        } else {
-            previous.sample_instant - current.step_instant
-        };
-        let time_to_current_measurement = current.sample_instant - current.step_instant;
-        let previous_sample_is_farther_away =
-            time_to_last_measurement > time_to_current_measurement;
-        //If this is the first measurement in this encoder step we have two time frames we could chose
-        //from:
-        //1) Previous measurement to the step_instance.
-        //2) The step_instance to the current measurement time
-        //Using the longer delta time gives less uncertainty in our estimates
-        if first_measurement_in_step && previous_sample_is_farther_away {
+        // We want to always use the largest time delta possible.
+        // There are a couple of scenarios that could be happening.
+        // |previous| transition| current | where previous-transition > delta transition-current.
+        // |previous| transition| current | where previous-transition < delta transition-current.
+        // |transition| previous| current | therefore previous-transition < delta transition-current.
+        // The first case uses the previous measurement sample time all the others use the current
+        // measurement sample time.
+        if delta_prev_to_t > delta_t_to_current {
             let range = previous.step.substep_range(cali);
             //NOTE: this is (initial - final) rather than (final-initial) to compensate for the fact
             //that embassy doesn't support negative durations.
-            Speed::new(measured_position - range.end, time_to_last_measurement)
-                ..Speed::new(measured_position - range.start, time_to_last_measurement)
+            Speed::new(transition_point - range.end, delta_prev_to_t)
+                ..Speed::new(transition_point - range.start, delta_prev_to_t)
         } else {
             let range = current.step.substep_range(cali);
-            Speed::new(range.start - measured_position, time_to_current_measurement)
-                ..Speed::new(range.end - measured_position, time_to_current_measurement)
+            Speed::new(range.start - transition_point, delta_t_to_current)
+                ..Speed::new(range.end - transition_point, delta_t_to_current)
         }
     }
+}
+
+/// Get the absolute value of the duration between two instances.
+fn duration_dif_abs(
+    t_0: embassy_time::Instant,
+    t_1: embassy_time::Instant,
+) -> embassy_time::Duration {
+    if t_0 > t_1 { t_0 - t_1 } else { t_1 - t_0 }
 }
 #[cfg(test)]
 pub mod tests {
