@@ -98,6 +98,16 @@ impl Measurement {
                 ..Speed::new(range.end - transition_point, delta_t_to_current)
         }
     }
+    pub fn estimate_speed(
+        last_known_speed: Speed,
+        previous: Measurement,
+        current: Measurement,
+        cali: &[u8; 4],
+    ) -> Speed {
+        let speed_bounds = Measurement::calculate_speed_bounds(previous, current, cali);
+        Measurement::calculate_speed(previous, current, cali)
+            .unwrap_or(last_known_speed.clamp(speed_bounds.start, speed_bounds.end))
+    }
 }
 
 /// Get the absolute value of the duration between two instances.

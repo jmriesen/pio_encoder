@@ -62,25 +62,15 @@ impl EncoderState {
             0
         };
 
-        let speed = {
-            if self.is_stopped() {
-                Speed::stopped()
-            } else {
-                let speed_bounds = Measurement::calculate_speed_bounds(
-                    self.prev_measurement,
-                    new_data,
-                    &self.calibration_data,
-                );
-                Measurement::calculate_speed(
-                    self.prev_measurement,
-                    new_data,
-                    &self.calibration_data,
-                )
-                .unwrap_or(
-                    self.last_known_speed
-                        .clamp(speed_bounds.start, speed_bounds.end),
-                )
-            }
+        let speed = if self.is_stopped() {
+            Speed::stopped()
+        } else {
+            Measurement::estimate_speed(
+                self.last_known_speed,
+                self.prev_measurement,
+                new_data,
+                &self.calibration_data,
+            )
         };
 
         let position = self.prev_measurement.transition(&self.calibration_data)
