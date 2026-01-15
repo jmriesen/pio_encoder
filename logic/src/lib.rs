@@ -4,6 +4,7 @@
 #![cfg_attr(not(test), no_std)]
 #![warn(clippy::pedantic)]
 #![allow(clippy::must_use_candidate)]
+use embassy_time::Duration;
 pub use encodeing::{Step, SubStep};
 pub mod encodeing;
 mod speed;
@@ -15,8 +16,6 @@ pub use measurement::Measurement;
 type CalibrationData = [u8; 4];
 /// Default calibration value that assumes each encoder tick is the same size
 const EQUAL_STEPS: CalibrationData = [0, 64, 128, 192];
-/// The number of samples that need to be read before we conclude the encoder has stopped.
-const IDLE_STOP_SAMPLES: u32 = 3;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
@@ -28,14 +27,13 @@ pub enum Direction {
 /// Stores all the logical state required for the sub-step encoder.
 ///
 ///NOTE: this intentionally does not rely on `embasy_rp` as that would prevent me from running the unit tests on my host machine.
-pub struct EncoderState {
+pub struct EncoderState<const IDLE_STOPING_TIME_MS: u64> {
     calibration_data: CalibrationData,
-    idle_stop_samples_count: u32,
     position: SubStep,
     last_known_speed: Speed,
     prev_measurement: Measurement,
 }
-impl EncoderState {
+impl<const IDLE_STOPING_TIME_MS: u64> EncoderState<IDLE_STOPING_TIME_MS> {
     /// Get current encoder speed
     pub fn speed(&self) -> Speed {
         self.last_known_speed
@@ -48,21 +46,15 @@ impl EncoderState {
     pub fn steps(&self) -> Step {
         self.prev_measurement.step
     }
-    /// The encoder is considered stopped if there have been `IDLE_STOP_SAMPLES` measurements
-    /// without the step count changing.
-    pub fn is_stopped(&self) -> bool {
-        self.idle_stop_samples_count >= IDLE_STOP_SAMPLES
+    pub fn idel_stopping_time() -> Duration {
+        Duration::from_millis(IDLE_STOPING_TIME_MS)
     }
+
     /// Helper method for `update_state` that guaranties we are not modifying the current state
     /// while generating the next one.
     fn calculate_next_state(&self, new_data: Measurement) -> Self {
-        let idle_count = if self.prev_measurement.step == new_data.step {
-            self.idle_stop_samples_count + 1
-        } else {
-            0
-        };
-
-        let speed = if self.is_stopped() {
+        let speed = if new_data.sample_instant - new_data.step_instant > Self::idel_stopping_time()
+        {
             Speed::stopped()
         } else {
             Measurement::estimate_speed(
@@ -77,7 +69,6 @@ impl EncoderState {
             + speed * (new_data.sample_instant - new_data.step_instant);
         Self {
             calibration_data: self.calibration_data,
-            idle_stop_samples_count: idle_count,
             position,
             last_known_speed: speed,
             prev_measurement: new_data,
@@ -95,7 +86,6 @@ impl EncoderState {
         EncoderState {
             calibration_data,
             // set so we start in the stopped state.
-            idle_stop_samples_count: IDLE_STOP_SAMPLES + 1,
             position: inital_conditions.transition(&calibration_data),
             last_known_speed: Speed::stopped(),
             prev_measurement: inital_conditions,
@@ -120,7 +110,7 @@ pub trait Encoder {
 mod tests {
     use crate::{
         Direction::Clockwise,
-        EQUAL_STEPS, EncoderState, IDLE_STOP_SAMPLES,
+        EQUAL_STEPS, EncoderState,
         encodeing::{Step, SubStep},
         measurement::{
             Measurement,
@@ -130,9 +120,10 @@ mod tests {
     };
     use embassy_time::{Duration, Instant};
 
+    //TODO: rework with new semantics
     #[test]
     fn testing_is_stoped() {
-        let mesurements = sequence_events(
+        let mesurements = dbg!(sequence_events(
             (Step::new(0), Clockwise, Instant::from_millis(0)),
             vec![
                 (Instant::from_millis(0), Event::Mesurement),
@@ -141,26 +132,26 @@ mod tests {
             ]
             .into_iter()
             .chain(
-                (11..)
+                (21..)
                     .step_by(10)
                     .into_iter()
                     .map(|x| (Instant::from_millis(x), Event::Mesurement))
-                    .take(IDLE_STOP_SAMPLES as usize),
+                    .take(3),
             ),
-        );
+        ));
 
-        let mut encoder_state = EncoderState::new(mesurements[0]);
+        let mut encoder_state = EncoderState::<30>::new(mesurements[0]);
         // we start off stopped
-        assert!(encoder_state.is_stopped());
+        assert_eq!(encoder_state.speed(), Speed::stopped());
         // Start moving
         encoder_state.update_state(mesurements[1]);
-        assert!(!encoder_state.is_stopped());
+        assert_ne!(encoder_state.speed(), Speed::stopped());
         // Next few readings don't show any movement
         for mesurement in &mesurements[2..] {
-            assert!(!encoder_state.is_stopped());
+            assert_ne!(encoder_state.speed(), Speed::stopped());
             encoder_state.update_state(*mesurement);
         }
-        assert!(encoder_state.is_stopped());
+        assert_eq!(encoder_state.speed(), Speed::stopped());
     }
 
     #[test]
@@ -175,22 +166,15 @@ mod tests {
                 (Instant::from_millis(20), Event::Mesurement),
                 (Instant::from_millis(30), Event::Step(4)),
                 (Instant::from_millis(30), Event::Mesurement),
-            ]
-            .into_iter()
-            .chain(
-                (11..)
-                    .step_by(10)
-                    .into_iter()
-                    .map(|x| (Instant::from_millis(x), Event::Mesurement))
-                    .take(IDLE_STOP_SAMPLES as usize),
-            ),
+            ],
         );
-        let mut encoder_state = EncoderState::new(mesurements[0]);
+        let mut encoder_state = EncoderState::<30>::new(mesurements[0]);
         assert_eq!(encoder_state.last_known_speed, Speed::stopped());
         // Start moving
         encoder_state.update_state(mesurements[1]);
         // There is a lag between first measurement that changes step and when we start "moving"
         // This delay is to insure the speed calculations have a valid previous position data.
+        // TODO: reflect on when this is needed.
         assert_eq!(encoder_state.last_known_speed, Speed::stopped());
         encoder_state.update_state(mesurements[2]);
         assert_eq!(
@@ -217,7 +201,7 @@ mod tests {
             ],
         );
         // We need at least two in movement measurement to get a good speed estimate.
-        let mut encoder_state = EncoderState::new(mesurements[0]);
+        let mut encoder_state = EncoderState::<30>::new(mesurements[0]);
         assert_eq!(encoder_state.last_known_speed, Speed::stopped());
         // See a new tick
         encoder_state.update_state(mesurements[1]);
@@ -246,7 +230,7 @@ mod tests {
                 (Instant::from_millis(50), Event::Mesurement),
             ],
         );
-        let mut encoder = EncoderState::new(mesurements[0]);
+        let mut encoder = EncoderState::<30>::new(mesurements[0]);
         encoder.update_state(mesurements[1]);
         encoder.update_state(mesurements[2]);
         assert_eq!(
@@ -267,7 +251,7 @@ mod tests {
             step_instant: Instant::from_millis(0),
             sample_instant: Instant::from_millis(0),
         };
-        let encoder = EncoderState::new(inital_measurement);
+        let encoder = EncoderState::<30>::new(inital_measurement);
         // The encoder is initialized assuming we are in a stopped position,
         // so the position estimate is just the initial measured position
         assert_eq!(
@@ -279,7 +263,7 @@ mod tests {
     /// - Moving at one step per 10 milliseconds
     /// - Currently at step steps_per_10_millis *3
     /// - moving clockwise
-    fn const_speed_encoder(steps_per_10_millis: i32) -> EncoderState {
+    fn const_speed_encoder(steps_per_10_millis: i32) -> EncoderState<30> {
         //Renaming to something shorter so the formatter keeps each vec entry on one line;
         let step_delta = steps_per_10_millis;
         let mesurements = sequence_events(
