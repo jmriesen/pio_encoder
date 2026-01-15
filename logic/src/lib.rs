@@ -29,7 +29,6 @@ pub enum Direction {
 ///NOTE: this intentionally does not rely on `embasy_rp` as that would prevent me from running the unit tests on my host machine.
 pub struct EncoderState<const IDLE_STOPING_TIME_MS: u64> {
     calibration_data: CalibrationData,
-    position: SubStep,
     last_known_speed: Speed,
     prev_measurement: Measurement,
 }
@@ -40,7 +39,8 @@ impl<const IDLE_STOPING_TIME_MS: u64> EncoderState<IDLE_STOPING_TIME_MS> {
     }
     /// Get last estimated position in subsets
     pub fn position(&self) -> SubStep {
-        self.position
+        self.prev_measurement.transition(&self.calibration_data)
+            + self.last_known_speed * (self.prev_measurement.time_since_transition())
     }
     /// Get the current encoder step
     pub fn steps(&self) -> Step {
@@ -50,33 +50,27 @@ impl<const IDLE_STOPING_TIME_MS: u64> EncoderState<IDLE_STOPING_TIME_MS> {
         Duration::from_millis(IDLE_STOPING_TIME_MS)
     }
 
-    /// Helper method for `update_state` that guaranties we are not modifying the current state
-    /// while generating the next one.
-    fn calculate_next_state(&self, new_data: Measurement) -> Self {
-        let speed = if new_data.time_since_transition() >= Self::idel_stopping_time() {
+    fn calculate_new_speed(&self, measurement: Measurement) -> Speed {
+        if measurement.time_since_transition() >= Self::idel_stopping_time() {
             Speed::stopped()
         } else {
             Measurement::estimate_speed(
                 self.last_known_speed,
                 self.prev_measurement,
-                new_data,
+                measurement,
                 &self.calibration_data,
             )
-        };
-
-        let position = self.prev_measurement.transition(&self.calibration_data)
-            + speed * (new_data.sample_instant - new_data.step_instant);
-        Self {
-            calibration_data: self.calibration_data,
-            position,
-            last_known_speed: speed,
-            prev_measurement: new_data,
         }
     }
 
     ///Process a new reading.
-    pub fn update_state(&mut self, measurement: Measurement) {
-        *self = self.calculate_next_state(measurement);
+    pub fn update(&mut self, measurement: Measurement) {
+        let new_speed = self.calculate_new_speed(measurement);
+        *self = EncoderState {
+            last_known_speed: new_speed,
+            prev_measurement: measurement,
+            calibration_data: self.calibration_data,
+        }
     }
 
     ///Initialize a new encoder state.
@@ -85,7 +79,6 @@ impl<const IDLE_STOPING_TIME_MS: u64> EncoderState<IDLE_STOPING_TIME_MS> {
         EncoderState {
             calibration_data,
             // set so we start in the stopped state.
-            position: inital_conditions.transition(&calibration_data),
             last_known_speed: Speed::stopped(),
             prev_measurement: inital_conditions,
         }
@@ -142,15 +135,15 @@ mod tests {
         let mut encoder_state = EncoderState::<30>::new(mesurements[0]);
         assert_eq!(encoder_state.speed(), Speed::stopped());
 
-        encoder_state.update_state(mesurements[1]);
+        encoder_state.update(mesurements[1]);
         assert_ne!(encoder_state.speed(), Speed::stopped());
 
         for mesurement in &mesurements[2..=4] {
-            encoder_state.update_state(*mesurement);
+            encoder_state.update(*mesurement);
             assert_ne!(encoder_state.speed(), Speed::stopped());
         }
 
-        encoder_state.update_state(mesurements[5]);
+        encoder_state.update(mesurements[5]);
         assert_eq!(encoder_state.speed(), Speed::stopped());
     }
 
@@ -171,18 +164,18 @@ mod tests {
         let mut encoder_state = EncoderState::<30>::new(mesurements[0]);
         assert_eq!(encoder_state.speed(), Speed::stopped());
         // Start moving
-        encoder_state.update_state(mesurements[1]);
+        encoder_state.update(mesurements[1]);
         assert_eq!(
             encoder_state.speed(),
             Speed::new(SubStep::new(64), Duration::from_millis(10))
         );
-        encoder_state.update_state(mesurements[2]);
+        encoder_state.update(mesurements[2]);
         assert_eq!(
             encoder_state.speed(),
             Speed::new(SubStep::new(64), Duration::from_millis(10))
         );
 
-        encoder_state.update_state(mesurements[3]);
+        encoder_state.update(mesurements[3]);
         assert_eq!(
             encoder_state.speed(),
             Speed::new(SubStep::new(128), Duration::from_millis(10))
@@ -206,13 +199,13 @@ mod tests {
             ],
         );
         let mut encoder = EncoderState::<30>::new(mesurements[0]);
-        encoder.update_state(mesurements[1]);
-        encoder.update_state(mesurements[2]);
+        encoder.update(mesurements[1]);
+        encoder.update(mesurements[2]);
         assert_eq!(
             encoder.last_known_speed,
             Speed::new(SubStep::new(64), Duration::from_millis(13))
         );
-        encoder.update_state(mesurements[3]);
+        encoder.update(mesurements[3]);
         assert_eq!(
             encoder.last_known_speed,
             Speed::new(SubStep::new(128), Duration::from_millis(15))
@@ -230,7 +223,7 @@ mod tests {
         // The encoder is initialized assuming we are in a stopped position,
         // so the position estimate is just the initial measured position
         assert_eq!(
-            encoder.position,
+            encoder.position(),
             inital_measurement.transition(&EQUAL_STEPS)
         )
     }
@@ -256,7 +249,7 @@ mod tests {
         let mut encoder = EncoderState::new(mesurements[0]);
         // Get the encoder moving at one step per 10 milliseconds
         for measurement in &mesurements[1..] {
-            encoder.update_state(*measurement);
+            encoder.update(*measurement);
         }
         assert_eq!(
             encoder.last_known_speed,
@@ -271,14 +264,14 @@ mod tests {
     fn estimate_substep_posotion() {
         //Check estimate after a short time
         let mut encoder = const_speed_encoder(1);
-        encoder.update_state(Measurement {
+        encoder.update(Measurement {
             step: Step::new(3),
             direction: Clockwise,
             step_instant: Instant::from_millis(30),
             sample_instant: Instant::from_millis(35),
         });
         assert_eq!(
-            encoder.position,
+            encoder.position(),
             // The estimated position should be halfway between 3 and 4 (-1 due to rounding)
             Step::new(3).lower_bound(&EQUAL_STEPS) + SubStep::new(64 / 2 - 1)
         );
@@ -288,7 +281,7 @@ mod tests {
     fn estimated_position_respects_step_bounds() {
         //Position estimate should still be bounded by the step bounds
         let mut encoder = const_speed_encoder(5);
-        encoder.update_state(Measurement {
+        encoder.update(Measurement {
             step: Step::new(15),
             direction: Clockwise,
             step_instant: Instant::from_millis(30),
@@ -296,7 +289,7 @@ mod tests {
         });
         //(-1 due to rounding)
         assert_eq!(
-            encoder.position,
+            encoder.position(),
             Step::new(15).upper_bound(&EQUAL_STEPS) - SubStep::new(1)
         )
     }

@@ -80,7 +80,7 @@ impl Measurement {
         let transition_point = current.transition(cali);
         // Insure duration is always positive.
         let delta_prev_to_t = duration_dif_abs(previous.sample_instant, current.step_instant);
-        let delta_t_to_current = current.sample_instant - current.step_instant;
+        let delta_t_to_current = current.time_since_transition();
 
         // We want to always use the largest time delta possible.
         // There are a couple of scenarios that could be happening.
