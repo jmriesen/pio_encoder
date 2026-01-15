@@ -15,12 +15,14 @@ use pio_speed_encoder_logic::{
 type CalibrationData = [u32; 4];
 
 /// Pio Backed quadrature encoder reader
-pub struct PioEncoder<'d, T: Instance, const SM: usize> {
+pub struct PioEncoder<'d, T: Instance, const SM: usize, const IDLE_STOPING_TIME_MS: u64> {
     sm: EncoderStateMachine<'d, T, SM>,
-    state: EncoderState,
+    state: EncoderState<IDLE_STOPING_TIME_MS>,
 }
 
-impl<'d, T: Instance, const SM: usize> PioEncoder<'d, T, SM> {
+impl<'d, T: Instance, const SM: usize, const IDLE_STOPING_TIME_MS: u64>
+    PioEncoder<'d, T, SM, IDLE_STOPING_TIME_MS>
+{
     pub fn new(
         pio: &mut Common<'d, T>,
         sm: StateMachine<'d, T, SM>,
@@ -37,10 +39,12 @@ impl<'d, T: Instance, const SM: usize> PioEncoder<'d, T, SM> {
     }
 }
 
-impl<'d, T: Instance, const SM: usize> Encoder for PioEncoder<'d, T, SM> {
+impl<'d, T: Instance, const SM: usize, const IDLE_STOPING_TIME_MS: u64> Encoder
+    for PioEncoder<'d, T, SM, IDLE_STOPING_TIME_MS>
+{
     fn update(&mut self) {
         let measurement = self.sm.pull_data();
-        self.state.update_state(measurement);
+        self.state.update(measurement);
     }
 
     fn ticks(&self) -> Step {

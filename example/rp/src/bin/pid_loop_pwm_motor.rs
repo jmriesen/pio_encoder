@@ -28,7 +28,7 @@ async fn main(_spawner: Spawner) {
     } = Pio::new(pio, Irqs);
 
     let prg = PioEncoderProgram::new(&mut common);
-    let mut encoder = PioEncoder::new(&mut common, sm0, p.PIN_16, p.PIN_17, &prg);
+    let mut encoder = PioEncoder::<_, 0, 30>::new(&mut common, sm0, p.PIN_16, p.PIN_17, &prg);
 
     let desired_freq_hz = 20_000;
     let clock_freq_hz = embassy_rp::clocks::clk_sys_freq();
