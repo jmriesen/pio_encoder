@@ -51,7 +51,13 @@ impl Measurement {
         current: Measurement,
         calibration_data: &CalibrationData,
     ) -> Option<Speed> {
-        if previous.step_instant == current.step_instant {
+        //TODO: look back at this.
+        //Should I be using step or transitions?
+        //In theory we could go step 1/ measure /step 2/step 1 /measure
+        //In the above case it would be valid to conclude we are moving at 0 (net) speed.( we may
+        //be wobbling on the edge of a transition.)
+        // TODO Think up some test cases to decide desired behavior.
+        if previous.step == current.step {
             //No new transitions have occurred, we cannot provide an updated speed estimate
             None
         } else {

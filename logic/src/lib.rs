@@ -32,13 +32,13 @@ pub struct EncoderState {
     calibration_data: CalibrationData,
     idle_stop_samples_count: u32,
     position: SubStep,
-    speed: Speed,
+    last_known_speed: Speed,
     prev_measurement: Measurement,
 }
 impl EncoderState {
     /// Get current encoder speed
     pub fn speed(&self) -> Speed {
-        self.speed
+        self.last_known_speed
     }
     /// Get last estimated position in subsets
     pub fn position(&self) -> SubStep {
@@ -61,24 +61,26 @@ impl EncoderState {
         } else {
             0
         };
-        let speed_bounds = Measurement::calculate_speed_bounds(
-            self.prev_measurement,
-            new_data,
-            &self.calibration_data,
-        );
+
         let speed = {
             if self.is_stopped() {
                 Speed::stopped()
-            } else if let Some(speed) = Measurement::calculate_speed(
-                self.prev_measurement,
-                new_data,
-                &self.calibration_data,
-            ) {
-                speed
             } else {
-                self.speed
+                let speed_bounds = Measurement::calculate_speed_bounds(
+                    self.prev_measurement,
+                    new_data,
+                    &self.calibration_data,
+                );
+                Measurement::calculate_speed(
+                    self.prev_measurement,
+                    new_data,
+                    &self.calibration_data,
+                )
+                .unwrap_or(
+                    self.last_known_speed
+                        .clamp(speed_bounds.start, speed_bounds.end),
+                )
             }
-            .clamp(speed_bounds.start, speed_bounds.end)
         };
 
         let position = self.prev_measurement.transition(&self.calibration_data)
@@ -87,7 +89,7 @@ impl EncoderState {
             calibration_data: self.calibration_data,
             idle_stop_samples_count: idle_count,
             position,
-            speed,
+            last_known_speed: speed,
             prev_measurement: new_data,
         }
     }
@@ -105,7 +107,7 @@ impl EncoderState {
             // set so we start in the stopped state.
             idle_stop_samples_count: IDLE_STOP_SAMPLES + 1,
             position: inital_conditions.transition(&calibration_data),
-            speed: Speed::stopped(),
+            last_known_speed: Speed::stopped(),
             prev_measurement: inital_conditions,
         }
     }
@@ -194,21 +196,21 @@ mod tests {
             ),
         );
         let mut encoder_state = EncoderState::new(mesurements[0]);
-        assert_eq!(encoder_state.speed, Speed::stopped());
+        assert_eq!(encoder_state.last_known_speed, Speed::stopped());
         // Start moving
         encoder_state.update_state(mesurements[1]);
         // There is a lag between first measurement that changes step and when we start "moving"
         // This delay is to insure the speed calculations have a valid previous position data.
-        assert_eq!(encoder_state.speed, Speed::stopped());
+        assert_eq!(encoder_state.last_known_speed, Speed::stopped());
         encoder_state.update_state(mesurements[2]);
         assert_eq!(
-            encoder_state.speed,
+            encoder_state.last_known_speed,
             Speed::new(SubStep::new(64), Duration::from_millis(10))
         );
 
         encoder_state.update_state(mesurements[3]);
         assert_eq!(
-            encoder_state.speed,
+            encoder_state.last_known_speed,
             Speed::new(SubStep::new(128), Duration::from_millis(10))
         );
     }
@@ -226,14 +228,14 @@ mod tests {
         );
         // We need at least two in movement measurement to get a good speed estimate.
         let mut encoder_state = EncoderState::new(mesurements[0]);
-        assert_eq!(encoder_state.speed, Speed::stopped());
+        assert_eq!(encoder_state.last_known_speed, Speed::stopped());
         // See a new tick
         encoder_state.update_state(mesurements[1]);
-        assert_eq!(encoder_state.speed, Speed::stopped());
+        assert_eq!(encoder_state.last_known_speed, Speed::stopped());
         // Stay on the current tick
         encoder_state.update_state(mesurements[2]);
         assert_eq!(
-            encoder_state.speed,
+            encoder_state.last_known_speed,
             Speed::new(SubStep::new(0), Duration::from_millis(10))
         );
     }
@@ -258,12 +260,12 @@ mod tests {
         encoder.update_state(mesurements[1]);
         encoder.update_state(mesurements[2]);
         assert_eq!(
-            encoder.speed,
+            encoder.last_known_speed,
             Speed::new(SubStep::new(64), Duration::from_millis(13))
         );
         encoder.update_state(mesurements[3]);
         assert_eq!(
-            encoder.speed,
+            encoder.last_known_speed,
             Speed::new(SubStep::new(128), Duration::from_millis(15))
         );
     }
@@ -308,7 +310,7 @@ mod tests {
             encoder.update_state(*measurement);
         }
         assert_eq!(
-            encoder.speed,
+            encoder.last_known_speed,
             Speed::new(
                 SubStep::new(steps_per_10_millis * 64),
                 Duration::from_millis(10)
