@@ -50,11 +50,16 @@ impl Measurement {
         previous: Measurement,
         current: Measurement,
         calibration_data: &CalibrationData,
-    ) -> Speed {
-        Speed::new(
-            current.transition(calibration_data) - previous.transition(calibration_data),
-            current.step_instant - previous.step_instant,
-        )
+    ) -> Option<Speed> {
+        if previous.step_instant == current.step_instant {
+            //No new transitions have occurred, we cannot provide an updated speed estimate
+            None
+        } else {
+            Some(Speed::new(
+                current.transition(calibration_data) - previous.transition(calibration_data),
+                current.step_instant - previous.step_instant,
+            ))
+        }
     }
 
     /// Calculate the lower and upper speed bounds giving the current and previous measurements
@@ -231,7 +236,7 @@ pub mod tests {
         );
         assert_eq!(
             Measurement::calculate_speed(mesurements[0], mesurements[1], &EQUAL_STEPS,),
-            Speed::new(SubStep::new(10 * 64), Duration::from_millis(10))
+            Some(Speed::new(SubStep::new(10 * 64), Duration::from_millis(10)))
         );
     }
 
