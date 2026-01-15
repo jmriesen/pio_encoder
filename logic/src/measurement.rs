@@ -5,7 +5,7 @@ use crate::{
     encodeing::{DirectionDuration, Step, SubStep},
     speed::Speed,
 };
-use embassy_time::Instant;
+use embassy_time::{Duration, Instant};
 
 /// This represents a current reading from the pio state machine.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -42,6 +42,9 @@ impl Measurement {
             Direction::Clockwise => self.step.lower_bound(calibration),
             Direction::CounterClockwise => self.step.upper_bound(calibration),
         }
+    }
+    pub fn time_since_transition(&self) -> Duration {
+        self.sample_instant - self.step_instant
     }
 }
 
