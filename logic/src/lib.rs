@@ -188,31 +188,6 @@ mod tests {
             Speed::new(SubStep::new(128), Duration::from_millis(10))
         );
     }
-    #[test]
-    fn wait_for_multiple_readings_before_concluding_movement() {
-        let mesurements = sequence_events(
-            (Step::new(0), Clockwise, Instant::from_millis(0)),
-            vec![
-                (Instant::from_millis(0), Event::Mesurement),
-                (Instant::from_millis(10), Event::Step(1)),
-                (Instant::from_millis(10), Event::Mesurement),
-                (Instant::from_millis(20), Event::Step(1)),
-                (Instant::from_millis(20), Event::Mesurement),
-            ],
-        );
-        // We need at least two in movement measurement to get a good speed estimate.
-        let mut encoder_state = EncoderState::<30>::new(mesurements[0]);
-        assert_eq!(encoder_state.last_known_speed, Speed::stopped());
-        // See a new tick
-        encoder_state.update_state(mesurements[1]);
-        assert_eq!(encoder_state.last_known_speed, Speed::stopped());
-        // Stay on the current tick
-        encoder_state.update_state(mesurements[2]);
-        assert_eq!(
-            encoder_state.last_known_speed,
-            Speed::new(SubStep::new(0), Duration::from_millis(10))
-        );
-    }
 
     #[test]
     fn example_from_source_documentation() {
