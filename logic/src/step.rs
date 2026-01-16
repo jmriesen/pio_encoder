@@ -114,19 +114,43 @@ mod tests {
     use crate::EQUAL_STEPS;
 
     #[test]
-    fn lower_upper_bounds() {
+    fn check_substep_ranges() {
         assert_eq!(
             Step::new(-4).substep_range(&EQUAL_STEPS),
             SubStep::new(-256)..SubStep::new(-192)
         );
-        assert_eq!(Step::new(-3).lower_bound(&EQUAL_STEPS), SubStep::new(-192));
-        assert_eq!(Step::new(-2).lower_bound(&EQUAL_STEPS), SubStep::new(-128));
-        assert_eq!(Step::new(-1).lower_bound(&EQUAL_STEPS), SubStep::new(-64));
-        assert_eq!(Step::new(0).lower_bound(&EQUAL_STEPS), SubStep::new(0));
-        assert_eq!(Step::new(1).lower_bound(&EQUAL_STEPS), SubStep::new(64));
-        assert_eq!(Step::new(2).lower_bound(&EQUAL_STEPS), SubStep::new(128));
-        assert_eq!(Step::new(3).lower_bound(&EQUAL_STEPS), SubStep::new(192));
-        assert_eq!(Step::new(4).lower_bound(&EQUAL_STEPS), SubStep::new(256));
+        assert_eq!(
+            Step::new(-3).substep_range(&EQUAL_STEPS),
+            SubStep::new(-192)..SubStep::new(-128)
+        );
+        assert_eq!(
+            Step::new(-2).substep_range(&EQUAL_STEPS),
+            SubStep::new(-128)..SubStep::new(-64)
+        );
+        assert_eq!(
+            Step::new(-1).substep_range(&EQUAL_STEPS),
+            SubStep::new(-64)..SubStep::new(0)
+        );
+        assert_eq!(
+            Step::new(0).substep_range(&EQUAL_STEPS),
+            SubStep::new(0)..SubStep::new(64)
+        );
+        assert_eq!(
+            Step::new(1).substep_range(&EQUAL_STEPS),
+            SubStep::new(64)..SubStep::new(128)
+        );
+        assert_eq!(
+            Step::new(2).substep_range(&EQUAL_STEPS),
+            SubStep::new(128)..SubStep::new(192)
+        );
+        assert_eq!(
+            Step::new(3).substep_range(&EQUAL_STEPS),
+            SubStep::new(192)..SubStep::new(256)
+        );
+        assert_eq!(
+            Step::new(4).substep_range(&EQUAL_STEPS),
+            SubStep::new(256)..SubStep::new(320)
+        );
     }
 
     #[test]
