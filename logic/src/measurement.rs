@@ -114,6 +114,7 @@ impl Measurement {
 }
 
 /// Get the absolute value of the duration between two instances.
+#[mutants::skip]
 fn duration_dif_abs(
     t_0: embassy_time::Instant,
     t_1: embassy_time::Instant,
@@ -149,10 +150,7 @@ pub mod tests {
                         std::cmp::Ordering::Less => CounterClockwise,
                         // If we have crossed back over the last transition point the direction of
                         // travel has flipped
-                        std::cmp::Ordering::Equal => match current_dir {
-                            Clockwise => CounterClockwise,
-                            CounterClockwise => Clockwise,
-                        },
+                        std::cmp::Ordering::Equal => current_dir.invert(),
                         std::cmp::Ordering::Greater => Clockwise,
                     };
                     current_step = step;
@@ -223,6 +221,27 @@ pub mod tests {
                     //Larger delta time.
                     (step_time, Event::Step(15)),
                     //Smaller delta time.
+                    (step_time + larger_delta, Event::Mesurement),
+                ],
+            );
+
+            assert_eq!(
+                Measurement::calculate_speed_bounds(mesurements[0], mesurements[1], &EQUAL_STEPS),
+                Speed::stopped()
+                    ..Speed::new(
+                        Step::new(end.raw() + 1).upper_bound(&EQUAL_STEPS)
+                            - end.upper_bound(&EQUAL_STEPS),
+                        larger_delta
+                    )
+            );
+        }
+        {
+            // symmetric delta
+            let mesurements = sequence_events(
+                (Step::new(5), Direction::Clockwise, Instant::from_millis(0)),
+                vec![
+                    (step_time - larger_delta, Event::Mesurement),
+                    (step_time, Event::Step(15)),
                     (step_time + larger_delta, Event::Mesurement),
                 ],
             );

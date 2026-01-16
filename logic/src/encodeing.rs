@@ -178,29 +178,49 @@ impl DirectionDuration {
 
 #[cfg(test)]
 mod tests {
+    use super::{Direction, DirectionDuration};
     use crate::{
         EQUAL_STEPS,
-        encodeing::{Step, SubStep, loop_count_start},
+        encodeing::{LOOP_DURATION, Step, SubStep, loop_count_start},
     };
-
-    use super::Direction;
     use embassy_time::Duration;
-
-    use super::DirectionDuration;
-
+    /// Do to how clockwise and counterclockwise ranges were defined the "start" values on there
+    /// own correspond to -1 cycles
+    /// Should never be an issue since pio program always increments the cycle count after setting
+    /// one of the "start" values
     #[test]
-    fn incrementing() {
-        assert_eq!(
-            DirectionDuration(loop_count_start(Direction::CounterClockwise) - 50).decode(10),
-            (Direction::CounterClockwise, Duration::from_micros(65))
-        );
+    fn edge_case() {
+        for direction in [Direction::Clockwise, Direction::CounterClockwise] {
+            assert_eq!(
+                DirectionDuration(loop_count_start(direction)).decode(1),
+                (direction.invert(), Duration::from_micros(u32::MAX as u64))
+            );
+            assert_eq!(
+                DirectionDuration(loop_count_start(direction).wrapping_sub(1)).decode(1),
+                (direction, Duration::from_micros(u64::from(LOOP_DURATION)))
+            );
+        }
     }
+
     #[test]
-    fn decrimenting() {
-        assert_eq!(
-            DirectionDuration(loop_count_start(Direction::Clockwise).wrapping_sub(50)).decode(10),
-            (Direction::Clockwise, Duration::from_micros(65))
-        );
+    fn decode() {
+        for direction in [Direction::Clockwise, Direction::CounterClockwise] {
+            for ticks_per_ms in [1, 5, 10] {
+                for cycles in [1, 5, 10] {
+                    assert_eq!(
+                        DirectionDuration(
+                            loop_count_start(direction)
+                                .wrapping_sub((cycles * ticks_per_ms) as i32)
+                        )
+                        .decode(ticks_per_ms),
+                        (
+                            direction,
+                            Duration::from_micros(u64::from(cycles * LOOP_DURATION))
+                        )
+                    );
+                }
+            }
+        }
     }
 
     #[test]

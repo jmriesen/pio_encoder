@@ -23,6 +23,14 @@ pub enum Direction {
     Clockwise,
     CounterClockwise,
 }
+impl Direction {
+    pub fn invert(&self) -> Self {
+        match self {
+            Direction::Clockwise => Direction::CounterClockwise,
+            Direction::CounterClockwise => Direction::Clockwise,
+        }
+    }
+}
 
 /// Stores all the logical state required for the sub-step encoder.
 ///
