@@ -2,8 +2,9 @@ use core::ops::Range;
 
 use crate::{
     CalibrationData, Direction,
-    encodeing::{DirectionDuration, Step, SubStep},
+    encodeing::DirectionDuration,
     speed::Speed,
+    step::{Step, SubStep},
 };
 use embassy_time::{Duration, Instant};
 

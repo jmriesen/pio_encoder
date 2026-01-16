@@ -2,13 +2,13 @@ use core::ops::Mul;
 
 use embassy_time::Duration;
 
-use crate::encodeing::SubStep;
+use crate::step::SubStep;
 
 /// Encoder speed
 /// Internally stored as sub-steps per 2^20 microseconds
 ///```rust
 /// use pio_speed_encoder_logic::Speed;
-/// use pio_speed_encoder_logic::encodeing::SubStep;
+/// use pio_speed_encoder_logic::SubStep;
 /// use embassy_time::Duration;
 /// let second = Duration::from_secs(1);
 ///
@@ -82,7 +82,7 @@ impl Mul<Duration> for Speed {
 #[cfg(test)]
 mod test {
     use super::Speed;
-    use crate::encodeing::SubStep;
+    use crate::step::SubStep;
     use embassy_time::Duration;
 
     #[test]

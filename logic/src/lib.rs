@@ -5,13 +5,14 @@
 #![warn(clippy::pedantic)]
 #![allow(clippy::must_use_candidate)]
 use embassy_time::Duration;
-pub use encodeing::{Step, SubStep};
 pub mod encodeing;
 mod speed;
 pub use speed::Speed;
 mod measurement;
 pub use encodeing::DirectionDuration;
 pub use measurement::Measurement;
+mod step;
+pub use step::{Step, SubStep};
 
 type CalibrationData = [u8; 4];
 /// Default calibration value that assumes each encoder tick is the same size
@@ -111,12 +112,12 @@ mod tests {
     use crate::{
         Direction::Clockwise,
         EQUAL_STEPS, EncoderState,
-        encodeing::{Step, SubStep},
         measurement::{
             Measurement,
             tests::{Event, sequence_events},
         },
         speed::Speed,
+        step::{Step, SubStep},
     };
     use embassy_time::{Duration, Instant};
 
