@@ -8,10 +8,7 @@ mod pio;
 
 use pio::EncoderStateMachine;
 pub use pio::PioEncoderProgram;
-use pio_speed_encoder_logic::{
-    Encoder, EncoderState, Speed,
-    encodeing::{Step, SubStep},
-};
+use pio_speed_encoder_logic::{Encoder, EncoderState, Speed, Step, SubStep};
 type CalibrationData = [u32; 4];
 
 /// Pio Backed quadrature encoder reader

@@ -15,7 +15,7 @@ use embassy_rp::{
 };
 use embassy_time::Instant;
 use fixed::traits::ToFixed;
-use pio_speed_encoder_logic::{DirectionDuration, Measurement, encodeing::Step};
+use pio_speed_encoder_logic::{DirectionDuration, Measurement, Step};
 
 pub struct PioEncoderProgram<'a, PIO: Instance> {
     prg: LoadedProgram<'a, PIO>,
@@ -107,7 +107,7 @@ impl<'d, T: Instance, const SM: usize> EncoderStateMachine<'d, T, SM> {
         }
     }
 
-    pub fn pull_raw_data(&mut self) -> (u32, u32, Instant) {
+    fn pull_raw_data(&mut self) -> (u32, u32, Instant) {
         let rx = self.sm.rx();
 
         //Purging buffer of stale data
@@ -127,12 +127,14 @@ impl<'d, T: Instance, const SM: usize> EncoderStateMachine<'d, T, SM> {
         })
     }
     pub fn pull_data(&mut self) -> Measurement {
-        let raw = self.pull_raw_data();
+        let (dir_dur, step, now) = self.pull_raw_data();
+        let (direction, time_since_transition) =
+            DirectionDuration::new(dir_dur as i32).decode(self.clocks_per_us);
         Measurement::new(
-            DirectionDuration::new(raw.0 as i32),
-            Step::new(raw.1 as i32),
-            raw.2,
-            self.clocks_per_us,
+            direction,
+            Step::new(step as i32),
+            now,
+            time_since_transition,
         )
     }
 }

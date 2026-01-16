@@ -2,7 +2,6 @@ use core::ops::Range;
 
 use crate::{
     CalibrationData, Direction,
-    encodeing::DirectionDuration,
     speed::Speed,
     step::{Step, SubStep},
 };
@@ -24,16 +23,15 @@ pub struct Measurement {
 
 impl Measurement {
     pub fn new(
-        dir_dur: DirectionDuration,
+        direction: Direction,
         steps: Step,
         sample_instant: Instant,
-        clocks_per_us: u32,
+        time_since_transition: Duration,
     ) -> Self {
-        let (direction, duration) = dir_dur.decode(clocks_per_us);
         Self {
             step: steps,
             direction,
-            step_instant: sample_instant - duration,
+            step_instant: sample_instant - time_since_transition,
             sample_instant,
         }
     }
@@ -169,10 +167,16 @@ pub mod tests {
     }
 
     #[test]
-    fn construct_measurement_from_data() {
+    fn run_constructor() {
         let time = Instant::from_secs(1);
+        let time_since_trnasition = Duration::from_micros(65);
         assert_eq!(
-            Measurement::new(DirectionDuration(0 - 50), Step::new(42), time, 10),
+            Measurement::new(
+                Direction::CounterClockwise,
+                Step::new(42),
+                time,
+                time_since_trnasition
+            ),
             Measurement {
                 step: Step::new(42),
                 direction: Direction::CounterClockwise,
