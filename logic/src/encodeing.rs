@@ -184,20 +184,33 @@ mod tests {
         encodeing::{LOOP_DURATION, Step, SubStep, loop_count_start},
     };
     use embassy_time::Duration;
-    /// Do to how clockwise and counterclockwise ranges were defined the "start" values on there
-    /// own correspond to -1 cycles
-    /// Should never be an issue since pio program always increments the cycle count after setting
-    /// one of the "start" values
+
     #[test]
-    fn edge_case() {
+    fn verify_start_positions() {
+        assert_eq!(loop_count_start(Direction::CounterClockwise), 0);
+        assert_eq!(loop_count_start(Direction::Clockwise), i32::MIN);
+    }
+
+    /// Due to how the encoding is defined cycles is always a nonzero value.
+    /// Attempting to construct a DirectionDuration with zero cycle results in an underflow.
+    ///
+    /// The first thing the PIO code does after setting the register to the start value is
+    /// subtract 1. So the PIO code will never return a zero cycles.
+    /// (It may overflow the number of cycles which will flip the direction and restart the cycle
+    /// count)
+    ///
+    #[test]
+    fn zero_cycles_underflow() {
         for direction in [Direction::Clockwise, Direction::CounterClockwise] {
-            assert_eq!(
-                DirectionDuration(loop_count_start(direction)).decode(1),
-                (direction.invert(), Duration::from_micros(u32::MAX as u64))
-            );
+            // Lowest values in x direction.
             assert_eq!(
                 DirectionDuration(loop_count_start(direction).wrapping_sub(1)).decode(1),
                 (direction, Duration::from_micros(u64::from(LOOP_DURATION)))
+            );
+            // under/overflow
+            assert_eq!(
+                DirectionDuration(loop_count_start(direction)).decode(1),
+                (direction.invert(), Duration::from_micros(u32::MAX as u64))
             );
         }
     }
@@ -207,15 +220,15 @@ mod tests {
         for direction in [Direction::Clockwise, Direction::CounterClockwise] {
             for ticks_per_ms in [1, 5, 10] {
                 for cycles in [1, 5, 10] {
+                    println!("direction:{direction:?},cycle:{cycles},ticks_per_ms:{ticks_per_ms}");
                     assert_eq!(
                         DirectionDuration(
-                            loop_count_start(direction)
-                                .wrapping_sub((cycles * ticks_per_ms) as i32)
+                            loop_count_start(direction).wrapping_sub((cycles) as i32)
                         )
                         .decode(ticks_per_ms),
                         (
                             direction,
-                            Duration::from_micros(u64::from(cycles * LOOP_DURATION))
+                            Duration::from_micros(u64::from(cycles * LOOP_DURATION / ticks_per_ms))
                         )
                     );
                 }
