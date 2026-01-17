@@ -126,6 +126,48 @@ pub mod tests {
 
     use super::*;
     use embassy_time::Duration;
+
+    /// Mocks the pio state machine.
+    pub struct MockPio {
+        current_position: Step,
+        direction_of_travel: Direction,
+        step_instant: Instant,
+    }
+    impl MockPio {
+        pub fn new(step: Step, direction: Direction, step_instant: Instant) -> Self {
+            Self {
+                current_position: step,
+                direction_of_travel: direction,
+                step_instant,
+            }
+        }
+
+        ///Simulate moving the encoder
+        pub fn position_change(&mut self, new_position: Step, now: Instant) {
+            use Direction as D;
+            use std::cmp::Ordering as E;
+            self.direction_of_travel = match new_position.cmp(&self.current_position) {
+                E::Less => D::CounterClockwise,
+                // If we have crossed back over the last transition point the direction of
+                // travel has flipped
+                E::Equal => self.direction_of_travel.invert(),
+                E::Greater => D::Clockwise,
+            };
+            self.step_instant = now;
+            self.current_position = new_position;
+        }
+
+        ///simulate tacking a measurement
+        pub fn take_mesurement(&self, now: Instant) -> Measurement {
+            Measurement {
+                step: self.current_position,
+                direction: self.direction_of_travel,
+                step_instant: self.step_instant,
+                sample_instant: now,
+            }
+        }
+    }
+
     pub enum Event {
         Step(i32),
         Mesurement,
@@ -136,31 +178,18 @@ pub mod tests {
         inital_conditions: (Step, Direction, Instant),
         events: impl IntoIterator<Item = (Instant, Event)>,
     ) -> Vec<Measurement> {
-        use Direction::*;
-        let mut current_step = inital_conditions.0;
-        let mut current_dir = inital_conditions.1;
-        let mut step_time = inital_conditions.2;
+        let mut mock_pio = MockPio::new(
+            inital_conditions.0,
+            inital_conditions.1,
+            inital_conditions.2,
+        );
         let mut mesurements = vec![];
         for (time, event) in events {
             match event {
                 Event::Step(step) => {
-                    let step = Step::new(step);
-                    current_dir = match step.cmp(&current_step) {
-                        std::cmp::Ordering::Less => CounterClockwise,
-                        // If we have crossed back over the last transition point the direction of
-                        // travel has flipped
-                        std::cmp::Ordering::Equal => current_dir.invert(),
-                        std::cmp::Ordering::Greater => Clockwise,
-                    };
-                    current_step = step;
-                    step_time = time
+                    mock_pio.position_change(Step::new(step), time);
                 }
-                Event::Mesurement => mesurements.push(Measurement {
-                    step: current_step,
-                    direction: current_dir,
-                    step_instant: step_time,
-                    sample_instant: time,
-                }),
+                Event::Mesurement => mesurements.push(mock_pio.take_mesurement(time)),
             }
         }
         mesurements
