@@ -120,45 +120,80 @@ mod tests {
         step::{Step, SubStep},
     };
     use embassy_time::{Duration, Instant};
+    fn simulate_assert(
+        measurements: Vec<Measurement>,
+        speeds: Vec<Speed>,
+        positions: Vec<SubStep>,
+    ) {
+        // Check that we did not forget to pass anything.
+        assert_eq!(measurements.len(), speeds.len());
+        assert_eq!(measurements.len(), positions.len());
+        let mut iter = measurements
+            .into_iter()
+            .zip(speeds.into_iter())
+            .zip(positions.into_iter());
+
+        let ((inital, speed), position) = iter.next().unwrap();
+        let mut encoder_state = EncoderState::<30>::new(dbg!(inital));
+        assert_eq!(speed, encoder_state.speed());
+        assert_eq!(position, encoder_state.position());
+
+        for ((measurement, speed), position) in iter {
+            encoder_state.update(dbg!(measurement));
+            assert_eq!(speed, encoder_state.speed());
+            assert_eq!(position, encoder_state.position());
+        }
+    }
 
     #[test]
-    fn testing_is_stoped() {
-        let mesurements = sequence_events(
+    fn estimate_between_ticks() {
+        let measurements = sequence_events(
             (Step::new(0), Clockwise, Instant::from_millis(0)),
             vec![
                 // we start off stopped
                 (Instant::from_millis(0), Event::Mesurement),
                 // Start moving
-                (Instant::from_millis(10), Event::Step(1)),
+                (Instant::from_millis(35), Event::Step(3)),
                 // Use real speed
-                (Instant::from_millis(10), Event::Mesurement),
-                // Use estimated speed based off of speed bounds.
-                (Instant::from_millis(20), Event::Mesurement),
-                (Instant::from_millis(30), Event::Mesurement),
-                (Instant::from_millis(39), Event::Mesurement),
-                // Time out and consider the encoder stopped
                 (Instant::from_millis(40), Event::Mesurement),
+                // Use keep using last speed estimate.
+                (Instant::from_millis(45), Event::Mesurement),
+                // Using last speed estimate would push position into the next step.
+                // Estimate current speed is the max possible that does not push position into the
+                // next step
+                (Instant::from_millis(50), Event::Mesurement),
+                // Last ms before time out.
+                (Instant::from_millis(64), Event::Mesurement),
+                // Time out and consider the encoder stopped
+                (Instant::from_millis(65), Event::Mesurement),
             ],
         );
-
-        let mut encoder_state = EncoderState::<30>::new(mesurements[0]);
-        assert_eq!(encoder_state.speed(), Speed::stopped());
-
-        encoder_state.update(mesurements[1]);
-        assert_ne!(encoder_state.speed(), Speed::stopped());
-
-        for mesurement in &mesurements[2..=4] {
-            encoder_state.update(*mesurement);
-            assert_ne!(encoder_state.speed(), Speed::stopped());
-        }
-
-        encoder_state.update(mesurements[5]);
-        assert_eq!(encoder_state.speed(), Speed::stopped());
+        let speeds = vec![
+            Speed::stopped(),
+            Speed::new(SubStep::new(64 * 3), Duration::from_millis(35)),
+            Speed::new(SubStep::new(64 * 3), Duration::from_millis(35)),
+            //Reducing speed estimate since we need to stay in the same tick
+            Speed::new(SubStep::new(64), Duration::from_millis(15)),
+            Speed::new(SubStep::new(64), Duration::from_millis(29)),
+            // Timed out
+            Speed::stopped(),
+        ];
+        let positions = vec![
+            SubStep::new(0),
+            Step::new(3).lower_bound(&EQUAL_STEPS) + speeds[1] * Duration::from_millis(5),
+            Step::new(3).lower_bound(&EQUAL_STEPS) + speeds[2] * Duration::from_millis(10),
+            // Clamp position at the end of the step.
+            Step::new(3).upper_bound(&EQUAL_STEPS) - SubStep::new(1),
+            Step::new(3).upper_bound(&EQUAL_STEPS) - SubStep::new(1),
+            // Revert position back to last known transition once we are stopped.
+            Step::new(3).lower_bound(&EQUAL_STEPS),
+        ];
+        simulate_assert(measurements, speeds, positions);
     }
 
     #[test]
-    fn calculating_speed() {
-        let mesurements = sequence_events(
+    fn step_and_mesurement_happen_at_the_same_time() {
+        let measurements = sequence_events(
             (Step::new(0), Clockwise, Instant::from_millis(0)),
             vec![
                 (Instant::from_millis(0), Event::Mesurement),
@@ -170,32 +205,27 @@ mod tests {
                 (Instant::from_millis(30), Event::Mesurement),
             ],
         );
-        let mut encoder_state = EncoderState::<30>::new(mesurements[0]);
-        assert_eq!(encoder_state.speed(), Speed::stopped());
-        // Start moving
-        encoder_state.update(mesurements[1]);
-        assert_eq!(
-            encoder_state.speed(),
-            Speed::new(SubStep::new(64), Duration::from_millis(10))
-        );
-        encoder_state.update(mesurements[2]);
-        assert_eq!(
-            encoder_state.speed(),
-            Speed::new(SubStep::new(64), Duration::from_millis(10))
-        );
+        let speeds = vec![
+            Speed::stopped(),
+            Speed::new(SubStep::new(64), Duration::from_millis(10)),
+            Speed::new(SubStep::new(64), Duration::from_millis(10)),
+            Speed::new(SubStep::new(64 * 2), Duration::from_millis(10)),
+        ];
+        let positions = vec![
+            SubStep::new(0),
+            Step::new(1).lower_bound(&EQUAL_STEPS) + speeds[1] * Duration::from_millis(0),
+            Step::new(2).lower_bound(&EQUAL_STEPS) + speeds[2] * Duration::from_millis(0),
+            Step::new(4).lower_bound(&EQUAL_STEPS) + speeds[2] * Duration::from_millis(0),
+        ];
 
-        encoder_state.update(mesurements[3]);
-        assert_eq!(
-            encoder_state.speed(),
-            Speed::new(SubStep::new(128), Duration::from_millis(10))
-        );
+        simulate_assert(measurements, speeds, positions);
     }
 
     #[test]
     fn example_from_source_documentation() {
         //This is the example taken from the readme of the code.
-        //https://github.com/raspberrypi/pico-examples/tree/master/pio/quadrature_encoder_substep
-        let mesurements = sequence_events(
+        //(https://github.com/raspberrypi/pico-examples/tree/master/pio/quadrature_encoder_substep)
+        let measurements = sequence_events(
             (Step::new(3), Clockwise, Instant::from_millis(0)),
             vec![
                 (Instant::from_millis(0), Event::Mesurement),
@@ -207,99 +237,18 @@ mod tests {
                 (Instant::from_millis(50), Event::Mesurement),
             ],
         );
-        let mut encoder = EncoderState::<30>::new(mesurements[0]);
-        encoder.update(mesurements[1]);
-        encoder.update(mesurements[2]);
-        assert_eq!(
-            encoder.last_known_speed,
-            Speed::new(SubStep::new(64), Duration::from_millis(13))
-        );
-        encoder.update(mesurements[3]);
-        assert_eq!(
-            encoder.last_known_speed,
-            Speed::new(SubStep::new(128), Duration::from_millis(15))
-        );
-    }
-    #[test]
-    fn inital_position() {
-        let inital_measurement = Measurement {
-            step: Step::new(3),
-            direction: Clockwise,
-            step_instant: Instant::from_millis(0),
-            sample_instant: Instant::from_millis(0),
-        };
-        let encoder = EncoderState::<30>::new(inital_measurement);
-        // The encoder is initialized assuming we are in a stopped position,
-        // so the position estimate is just the initial measured position
-        assert_eq!(
-            encoder.position(),
-            inital_measurement.transition(&EQUAL_STEPS)
-        )
-    }
-    /// Test helper function that initializes an encoder that is
-    /// - Moving at one step per 10 milliseconds
-    /// - Currently at step steps_per_10_millis *3
-    /// - moving clockwise
-    fn const_speed_encoder(steps_per_10_millis: i32) -> EncoderState<30> {
-        //Renaming to something shorter so the formatter keeps each vec entry on one line;
-        let step_delta = steps_per_10_millis;
-        let mesurements = sequence_events(
-            (Step::new(0), Clockwise, Instant::from_millis(0)),
-            vec![
-                (Instant::from_millis(0), Event::Mesurement),
-                (Instant::from_millis(10), Event::Step(step_delta * 1)),
-                (Instant::from_millis(10), Event::Mesurement),
-                (Instant::from_millis(20), Event::Step(step_delta * 2)),
-                (Instant::from_millis(20), Event::Mesurement),
-                (Instant::from_millis(30), Event::Step(step_delta * 3)),
-                (Instant::from_millis(30), Event::Mesurement),
-            ],
-        );
-        let mut encoder = EncoderState::new(mesurements[0]);
-        // Get the encoder moving at one step per 10 milliseconds
-        for measurement in &mesurements[1..] {
-            encoder.update(*measurement);
-        }
-        assert_eq!(
-            encoder.last_known_speed,
-            Speed::new(
-                SubStep::new(steps_per_10_millis * 64),
-                Duration::from_millis(10)
-            )
-        );
-        encoder
-    }
-    #[test]
-    fn estimate_substep_posotion() {
-        //Check estimate after a short time
-        let mut encoder = const_speed_encoder(1);
-        encoder.update(Measurement {
-            step: Step::new(3),
-            direction: Clockwise,
-            step_instant: Instant::from_millis(30),
-            sample_instant: Instant::from_millis(35),
-        });
-        assert_eq!(
-            encoder.position(),
-            // The estimated position should be halfway between 3 and 4 (-1 due to rounding)
-            Step::new(3).lower_bound(&EQUAL_STEPS) + SubStep::new(64 / 2 - 1)
-        );
-    }
-
-    #[test]
-    fn estimated_position_respects_step_bounds() {
-        //Position estimate should still be bounded by the step bounds
-        let mut encoder = const_speed_encoder(5);
-        encoder.update(Measurement {
-            step: Step::new(15),
-            direction: Clockwise,
-            step_instant: Instant::from_millis(30),
-            sample_instant: Instant::from_millis(39),
-        });
-        //(-1 due to rounding)
-        assert_eq!(
-            encoder.position(),
-            Step::new(15).upper_bound(&EQUAL_STEPS) - SubStep::new(1)
-        )
+        let speeds = vec![
+            Speed::stopped(),
+            Speed::new(SubStep::new(64), Duration::from_millis(21)),
+            Speed::new(SubStep::new(64), Duration::from_millis(13)),
+            Speed::new(SubStep::new(128), Duration::from_millis(15)),
+        ];
+        let positions = vec![
+            Step::new(3).lower_bound(&EQUAL_STEPS),
+            Step::new(4).lower_bound(&EQUAL_STEPS) + speeds[1] * Duration::from_millis(9),
+            Step::new(5).lower_bound(&EQUAL_STEPS) + speeds[2] * Duration::from_millis(6),
+            Step::new(7).lower_bound(&EQUAL_STEPS) + speeds[3] * Duration::from_millis(1),
+        ];
+        simulate_assert(measurements, speeds, positions);
     }
 }
