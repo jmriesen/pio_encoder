@@ -110,7 +110,7 @@ pub trait Encoder {
 #[cfg(test)]
 mod tests {
     use crate::{
-        Direction::Clockwise,
+        Direction::{Clockwise, CounterClockwise},
         EQUAL_STEPS, EncoderState,
         measurement::{
             Measurement,
@@ -135,11 +135,17 @@ mod tests {
 
         let ((inital, speed), position) = iter.next().unwrap();
         let mut encoder_state = EncoderState::<30>::new(dbg!(inital));
+        dbg!(inital);
+        dbg!(encoder_state.speed());
+        dbg!(encoder_state.position());
         assert_eq!(speed, encoder_state.speed());
         assert_eq!(position, encoder_state.position());
 
         for ((measurement, speed), position) in iter {
-            encoder_state.update(dbg!(measurement));
+            dbg!(measurement);
+            encoder_state.update(measurement);
+            dbg!(encoder_state.speed());
+            dbg!(encoder_state.position());
             assert_eq!(speed, encoder_state.speed());
             assert_eq!(position, encoder_state.position());
         }
@@ -148,7 +154,7 @@ mod tests {
     #[test]
     fn estimate_between_ticks() {
         let measurements = sequence_events(
-            (Step::new(0), Clockwise, Instant::from_millis(0)),
+            (Step::new(0), CounterClockwise, Instant::from_millis(0)),
             vec![
                 // we start off stopped
                 (Instant::from_millis(0), Event::Mesurement),
@@ -195,7 +201,7 @@ mod tests {
     #[test]
     fn step_and_mesurement_happen_at_the_same_time() {
         let measurements = sequence_events(
-            (Step::new(0), Clockwise, Instant::from_millis(0)),
+            (Step::new(0), CounterClockwise, Instant::from_millis(0)),
             vec![
                 (Instant::from_millis(0), Event::Mesurement),
                 (Instant::from_millis(10), Event::Step(1)),
@@ -227,7 +233,7 @@ mod tests {
         //This is the example taken from the readme of the code.
         //(https://github.com/raspberrypi/pico-examples/tree/master/pio/quadrature_encoder_substep)
         let measurements = sequence_events(
-            (Step::new(3), Clockwise, Instant::from_millis(0)),
+            (Step::new(3), CounterClockwise, Instant::from_millis(0)),
             vec![
                 (Instant::from_millis(0), Event::Mesurement),
                 (Instant::from_millis(21), Event::Step(4)),
@@ -256,7 +262,7 @@ mod tests {
     #[test]
     fn hovering_over_a_transition_is_not_considered_movement() {
         let measurements = sequence_events(
-            (Step::new(3), Clockwise, Instant::from_millis(0)),
+            (Step::new(3), CounterClockwise, Instant::from_millis(0)),
             vec![
                 (Instant::from_millis(0), Event::Mesurement),
                 (Instant::from_millis(10), Event::Step(2)),

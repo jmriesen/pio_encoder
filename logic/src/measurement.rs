@@ -36,10 +36,12 @@ impl Measurement {
         }
     }
     /// The subset where the most recent step step occurred.
+    /// If we are moving in the positive direction (counterclockwise) this is the lower bound.
+    /// If we are moving in the negative direction (clockwise) this is the upper bound.
     pub fn transition(&self, calibration: &CalibrationData) -> SubStep {
         match self.direction {
-            Direction::Clockwise => self.step.lower_bound(calibration),
-            Direction::CounterClockwise => self.step.upper_bound(calibration),
+            Direction::Clockwise => self.step.upper_bound(calibration),
+            Direction::CounterClockwise => self.step.lower_bound(calibration),
         }
     }
     pub fn time_since_transition(&self) -> Duration {
@@ -108,7 +110,8 @@ impl Measurement {
     ) -> Speed {
         let speed_bounds = Measurement::calculate_speed_bounds(previous, current, cali);
         Measurement::calculate_speed(previous, current, cali)
-            .unwrap_or(last_known_speed.clamp(speed_bounds.start, speed_bounds.end))
+            .unwrap_or(last_known_speed)
+            .clamp(speed_bounds.start, speed_bounds.end)
     }
 }
 
@@ -147,13 +150,13 @@ pub mod tests {
             use Direction as D;
             use std::cmp::Ordering as E;
             self.direction_of_travel = match new_position.cmp(&self.current_position) {
-                E::Less => D::CounterClockwise,
+                E::Less => D::Clockwise,
                 // If we have crossed back over the last transition point the direction of
                 // travel has flipped
                 E::Equal => panic!(
                     "The PIO code can not `reenter` the current step (it would just keep incrementing cycles as if it never left)"
                 ),
-                E::Greater => D::Clockwise,
+                E::Greater => D::CounterClockwise,
             };
             self.step_instant = now;
             self.current_position = new_position;
@@ -299,7 +302,7 @@ pub mod tests {
         let mesurements = sequence_events(
             (
                 Step::new(10),
-                Direction::Clockwise,
+                Direction::CounterClockwise,
                 Instant::from_millis(10),
             ),
             vec![
@@ -317,7 +320,11 @@ pub mod tests {
     #[test]
     fn testing_intar_step_bounds() {
         let mesurements = sequence_events(
-            (Step::new(0), Direction::Clockwise, Instant::from_millis(0)),
+            (
+                Step::new(0),
+                Direction::CounterClockwise,
+                Instant::from_millis(0),
+            ),
             vec![
                 //Start moving clockwise.
                 (Instant::from_millis(10), Event::Step(3)),
