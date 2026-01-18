@@ -150,7 +150,9 @@ pub mod tests {
                 E::Less => D::CounterClockwise,
                 // If we have crossed back over the last transition point the direction of
                 // travel has flipped
-                E::Equal => self.direction_of_travel.invert(),
+                E::Equal => panic!(
+                    "The PIO code can not `reenter` the current step (it would just keep incrementing cycles as if it never left)"
+                ),
                 E::Greater => D::Clockwise,
             };
             self.step_instant = now;

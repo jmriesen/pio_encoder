@@ -168,6 +168,7 @@ mod tests {
                 (Instant::from_millis(65), Event::Mesurement),
             ],
         );
+
         let speeds = vec![
             Speed::stopped(),
             Speed::new(SubStep::new(64 * 3), Duration::from_millis(35)),
@@ -248,6 +249,35 @@ mod tests {
             Step::new(4).lower_bound(&EQUAL_STEPS) + speeds[1] * Duration::from_millis(9),
             Step::new(5).lower_bound(&EQUAL_STEPS) + speeds[2] * Duration::from_millis(6),
             Step::new(7).lower_bound(&EQUAL_STEPS) + speeds[3] * Duration::from_millis(1),
+        ];
+        simulate_assert(measurements, speeds, positions);
+    }
+
+    #[test]
+    fn hovering_over_a_transition_is_not_considered_movement() {
+        let measurements = sequence_events(
+            (Step::new(3), Clockwise, Instant::from_millis(0)),
+            vec![
+                (Instant::from_millis(0), Event::Mesurement),
+                (Instant::from_millis(10), Event::Step(2)),
+                (Instant::from_millis(20), Event::Mesurement),
+                (Instant::from_millis(30), Event::Step(3)),
+                (Instant::from_millis(40), Event::Mesurement),
+                (Instant::from_millis(50), Event::Step(2)),
+                (Instant::from_millis(60), Event::Mesurement),
+            ],
+        );
+        let speeds = vec![
+            Speed::stopped(),
+            Speed::stopped(),
+            Speed::stopped(),
+            Speed::stopped(),
+        ];
+        let positions = vec![
+            Step::new(3).lower_bound(&EQUAL_STEPS),
+            Step::new(3).lower_bound(&EQUAL_STEPS),
+            Step::new(3).lower_bound(&EQUAL_STEPS),
+            Step::new(3).lower_bound(&EQUAL_STEPS),
         ];
         simulate_assert(measurements, speeds, positions);
     }
