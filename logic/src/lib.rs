@@ -110,7 +110,7 @@ pub trait Encoder {
 #[cfg(test)]
 mod tests {
     use crate::{
-        Direction::{Clockwise, CounterClockwise},
+        Direction::CounterClockwise,
         EQUAL_STEPS, EncoderState,
         measurement::{
             Measurement,
@@ -284,6 +284,58 @@ mod tests {
             Step::new(3).lower_bound(&EQUAL_STEPS),
             Step::new(3).lower_bound(&EQUAL_STEPS),
             Step::new(3).lower_bound(&EQUAL_STEPS),
+        ];
+        simulate_assert(measurements, speeds, positions);
+    }
+    #[test]
+    fn always_use_larger_delta_time_for_estiments() {
+        let measurements = sequence_events(
+            (Step::new(0), CounterClockwise, Instant::from_millis(0)),
+            vec![
+                // larger delta happens first
+                (Instant::from_millis(035), Event::Mesurement),
+                (Instant::from_millis(050), Event::Step(10)),
+                (Instant::from_millis(060), Event::Mesurement),
+                //---resetting
+                (Instant::from_millis(060), Event::Step(-1)),
+                (Instant::from_millis(100), Event::Step(0)),
+                // larger delta happens after
+                (Instant::from_millis(145), Event::Mesurement),
+                (Instant::from_millis(150), Event::Step(10)),
+                (Instant::from_millis(160), Event::Mesurement),
+                //---resetting
+                (Instant::from_millis(160), Event::Step(-1)),
+                (Instant::from_millis(200), Event::Step(0)),
+                // Same time delta
+                (Instant::from_millis(240), Event::Mesurement),
+                (Instant::from_millis(250), Event::Step(10)),
+                (Instant::from_millis(260), Event::Mesurement),
+            ],
+        );
+        let speeds = vec![
+            // Larger delta happens first use speed from the last two steps
+            Speed::stopped(),
+            Speed::new(
+                Step::new(10).lower_bound(&EQUAL_STEPS) - Step::new(0).upper_bound(&EQUAL_STEPS),
+                Duration::from_millis(15),
+            ),
+            // larger delta happens after
+            Speed::stopped(),
+            dbg!(Speed::new(SubStep::new(64), Duration::from_millis(10))),
+            // Same time delta
+            Speed::stopped(),
+            Speed::new(SubStep::new(64), Duration::from_millis(10)),
+        ];
+        let positions = vec![
+            // larger delta happens first
+            Step::new(0).lower_bound(&EQUAL_STEPS),
+            Step::new(10).lower_bound(&EQUAL_STEPS) + speeds[1] * Duration::from_millis(10),
+            // Larger delta happens after
+            Step::new(0).lower_bound(&EQUAL_STEPS),
+            Step::new(10).lower_bound(&EQUAL_STEPS) + speeds[3] * Duration::from_millis(10),
+            // Same time delta
+            Step::new(0).lower_bound(&EQUAL_STEPS),
+            Step::new(10).lower_bound(&EQUAL_STEPS) + speeds[5] * Duration::from_millis(10),
         ];
         simulate_assert(measurements, speeds, positions);
     }

@@ -147,17 +147,10 @@ pub mod tests {
 
         ///Simulate moving the encoder
         pub fn position_change(&mut self, new_position: Step, now: Instant) {
-            use Direction as D;
-            use std::cmp::Ordering as E;
-            self.direction_of_travel = match new_position.cmp(&self.current_position) {
-                E::Less => D::Clockwise,
-                // If we have crossed back over the last transition point the direction of
-                // travel has flipped
-                E::Equal => panic!(
-                    "The PIO code can not `reenter` the current step (it would just keep incrementing cycles as if it never left)"
-                ),
-                E::Greater => D::CounterClockwise,
-            };
+            self.direction_of_travel =self.current_position.comp(new_position).expect(
+                "The PIO code can not `reenter` the current step (it would just keep incrementing cycles as if it never left)"
+                );
+            //Check how far away the points are from each other
             self.step_instant = now;
             self.current_position = new_position;
         }

@@ -82,7 +82,7 @@ impl Mul<Duration> for Speed {
 #[cfg(test)]
 mod test {
     use super::Speed;
-    use crate::step::SubStep;
+    use crate::{EQUAL_STEPS, Step, step::SubStep};
     use embassy_time::Duration;
 
     #[test]

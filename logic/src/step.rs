@@ -1,13 +1,13 @@
-use crate::CalibrationData;
+use crate::{CalibrationData, Direction};
 use core::{
     num::Wrapping,
     ops::{Add, Range, Sub},
 };
 ///An encoder step. (4 steps per encoder cycle)
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct Step(Wrapping<u32>);
 /// 4 `Step` = 1 cycle = 255 `SubStep`s.
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct SubStep(Wrapping<u32>);
 
 #[cfg(feature = "defmt")]
@@ -67,6 +67,19 @@ impl Step {
         )]
         {
             self.0.0 as i32
+        }
+    }
+    /// Returns the direction of other relative to self via the shortest path.
+    /// Returns None if the values are the same.
+    pub fn comp(&self, other: Self) -> Option<Direction> {
+        use Direction as D;
+        use core::cmp::Ordering as E;
+        let delta = other.0 - (self.0);
+        //Compare to u32's halfway point
+        match delta.0.cmp(&(1u32 << 31)) {
+            E::Equal => None,
+            E::Less => Some(D::CounterClockwise),
+            E::Greater => Some(D::Clockwise),
         }
     }
 }
