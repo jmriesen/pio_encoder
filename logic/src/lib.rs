@@ -59,8 +59,9 @@ impl<const IDLE_STOPING_TIME_MS: u64> EncoderState<IDLE_STOPING_TIME_MS> {
         Duration::from_millis(IDLE_STOPING_TIME_MS)
     }
 
-    fn calculate_new_speed(&self, measurement: Measurement) -> Speed {
-        if measurement.time_since_transition() >= Self::idel_stopping_time() {
+    ///Process a new reading.
+    pub fn update(&mut self, measurement: Measurement) {
+        let new_speed = if measurement.time_since_transition() >= Self::idel_stopping_time() {
             Speed::stopped()
         } else {
             Measurement::estimate_speed(
@@ -69,17 +70,9 @@ impl<const IDLE_STOPING_TIME_MS: u64> EncoderState<IDLE_STOPING_TIME_MS> {
                 measurement,
                 &self.calibration_data,
             )
-        }
-    }
-
-    ///Process a new reading.
-    pub fn update(&mut self, measurement: Measurement) {
-        let new_speed = self.calculate_new_speed(measurement);
-        *self = EncoderState {
-            last_known_speed: new_speed,
-            prev_measurement: measurement,
-            calibration_data: self.calibration_data,
-        }
+        };
+        self.last_known_speed = new_speed;
+        self.prev_measurement = measurement;
     }
 
     ///Initialize a new encoder state.
