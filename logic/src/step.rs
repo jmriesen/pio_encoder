@@ -110,6 +110,8 @@ impl Add for SubStep {
 
 #[cfg(test)]
 mod tests {
+    use std::num::Wrapping;
+
     use super::{Step, SubStep};
     use crate::EQUAL_STEPS;
 
@@ -165,5 +167,16 @@ mod tests {
     fn sub_step_arithmatic() {
         assert_eq!(SubStep::new(1) + SubStep::new(1), SubStep::new(2));
         assert_eq!(SubStep::new(1) - SubStep::new(1), SubStep::new(0));
+    }
+
+    #[test]
+    fn substeps_role_over_before_steps_do() {
+        for i in (32 - 6)..32 {
+            dbg!(i);
+            assert_eq!(
+                Step(Wrapping(10 + 0)).lower_bound(&EQUAL_STEPS),
+                Step(Wrapping(10 + (1 << i))).lower_bound(&EQUAL_STEPS),
+            );
+        }
     }
 }
