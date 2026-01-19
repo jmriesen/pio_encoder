@@ -121,26 +121,28 @@ mod tests {
         // Check that we did not forget to pass anything.
         assert_eq!(measurements.len(), speeds.len());
         assert_eq!(measurements.len(), positions.len());
-        let mut iter = measurements
+
+        //Asserts that should be run after every measurement;
+        let asserts = |_measurement: Measurement,
+                       speed: Speed,
+                       position: SubStep,
+                       encoder_state: &EncoderState<30>| {
+            assert_eq!(speed, encoder_state.speed());
+            assert_eq!(position, encoder_state.position());
+        };
+
+        let mut measurements_and_expected = measurements
             .into_iter()
             .zip(speeds.into_iter())
             .zip(positions.into_iter());
 
-        let ((inital, speed), position) = iter.next().unwrap();
+        let ((inital, speed), position) = measurements_and_expected.next().unwrap();
         let mut encoder_state = EncoderState::<30>::new(dbg!(inital));
-        dbg!(inital);
-        dbg!(encoder_state.speed());
-        dbg!(encoder_state.position());
-        assert_eq!(speed, encoder_state.speed());
-        assert_eq!(position, encoder_state.position());
+        asserts(inital, speed, position, &encoder_state);
 
-        for ((measurement, speed), position) in iter {
-            dbg!(measurement);
+        for ((measurement, speed), position) in measurements_and_expected {
             encoder_state.update(measurement);
-            dbg!(encoder_state.speed());
-            dbg!(encoder_state.position());
-            assert_eq!(speed, encoder_state.speed());
-            assert_eq!(position, encoder_state.position());
+            asserts(measurement, speed, position, &encoder_state);
         }
     }
 
