@@ -283,7 +283,7 @@ mod tests {
         simulate_assert(measurements, speeds, positions);
     }
     #[test]
-    fn always_use_larger_delta_time_for_estiments() {
+    fn always_use_larger_delta_speed_for_estiments() {
         let measurements = sequence_events(
             (Step::new(0), CounterClockwise, Instant::from_millis(0)),
             vec![
