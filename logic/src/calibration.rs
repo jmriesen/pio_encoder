@@ -47,20 +47,33 @@ async fn sample_next_step_len(
     loop {
         ticker.next().await;
         let next = state_machine.read();
-
-        match next.step.raw() - current.step.raw() {
-            0 => continue,
-            1 => {
-                break {
-                    let delta = next.step_instant - current.step_instant;
-                    if delta <= Duration::from_millis(20) {
-                        Some((delta.as_millis() as u8, next))
-                    } else {
-                        None
-                    }
-                };
+        if current.direction != next.direction {
+            break None;
+        } else {
+            match next.step.raw() - current.step.raw() {
+                1 => {
+                    break {
+                        let delta = next.step_instant - current.step_instant;
+                        if delta <= Duration::from_millis(20) {
+                            Some((delta.as_millis() as u8, next))
+                        } else {
+                            None
+                        }
+                    };
+                }
+                -1 => {
+                    break {
+                        let delta = next.step_instant - current.step_instant;
+                        if delta <= Duration::from_millis(20) {
+                            Some((delta.as_millis() as u8, next))
+                        } else {
+                            None
+                        }
+                    };
+                }
+                0 => continue,
+                _ => break None,
             }
-            _ => break None,
         }
     }
 }
@@ -134,6 +147,21 @@ mod test {
                 (Duration::from_millis(10), Step::new(3)),
                 (Duration::from_millis(10), Step::new(4)),
                 (Duration::from_millis(10), Step::new(5)),
+            ],
+        );
+        tokio::spawn(runner.run());
+        assert_eq!(sample_phase_lengths(&sensor).await.0, [10, 10, 10, 10]);
+    }
+    #[tokio::test()]
+    async fn balanced_mesurement_clockwise() {
+        let (sensor, runner) = MockSensor::new(
+            (Step::new(0), Clockwise, Instant::from_millis(0)),
+            vec![
+                (Duration::from_millis(10), Step::new(-1)),
+                (Duration::from_millis(10), Step::new(-2)),
+                (Duration::from_millis(10), Step::new(-3)),
+                (Duration::from_millis(10), Step::new(-4)),
+                (Duration::from_millis(10), Step::new(-5)),
             ],
         );
         tokio::spawn(runner.run());
