@@ -18,15 +18,18 @@ async fn sample_phase_lengths(state_machine: &impl EncoderStateMachine) -> Phase
         state_machine: &impl EncoderStateMachine,
     ) -> Option<PhaseLengths> {
         let mut ticker = embassy_time::Ticker::every(Duration::from_millis(1));
-
         ticker.next().await;
-        let first = state_machine.read();
-        let (delta_0, second) = sample_next_step_len(state_machine, &mut ticker, first).await?;
-        let (delta_1, third) = sample_next_step_len(state_machine, &mut ticker, second).await?;
-        let (delta_2, forth) = sample_next_step_len(state_machine, &mut ticker, third).await?;
-        let (delta_3, _) = sample_next_step_len(state_machine, &mut ticker, forth).await?;
+        let inital = state_machine.read();
+
+        // sample cycle
+        let (delta_0, current) = sample_next_step_len(state_machine, &mut ticker, inital).await?;
+        let (delta_1, currnet) = sample_next_step_len(state_machine, &mut ticker, current).await?;
+        let (delta_2, current) = sample_next_step_len(state_machine, &mut ticker, currnet).await?;
+        let (delta_3, _) = sample_next_step_len(state_machine, &mut ticker, current).await?;
+
+        // Adjust to for starting phase
         let mut deltas = [delta_0, delta_1, delta_2, delta_3];
-        deltas.rotate_left(first.step.phase());
+        deltas.rotate_left(inital.step.phase());
         Some(PhaseLengths(deltas))
     }
     loop {
