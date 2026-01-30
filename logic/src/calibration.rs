@@ -8,51 +8,50 @@ trait EncoderStateMachine {
     /// VALUES***
     fn read(&self) -> Measurement;
 }
+
+/// Represents a measure of how long each phase takes.
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
-struct CalibrationMesurement([u8; 4]);
-async fn try_take_calibration_mesurement(
-    state_machine: &impl EncoderStateMachine,
-) -> Option<CalibrationMesurement> {
-    let mut ticker = embassy_time::Ticker::every(Duration::from_millis(1));
+struct PhaseLengths([u8; 4]);
 
-    ticker.next().await;
-    let first = state_machine.read();
-    let (delta_0, second) = wait_for_step(state_machine, &mut ticker, first).await?;
-    let (delta_1, third) = wait_for_step(state_machine, &mut ticker, second).await?;
-    let (delta_2, forth) = wait_for_step(state_machine, &mut ticker, third).await?;
-    let (delta_3, _) = wait_for_step(state_machine, &mut ticker, forth).await?;
-    let mut deltas = [delta_0, delta_1, delta_2, delta_3];
-    deltas.rotate_left(first.step.phase());
-    Some(CalibrationMesurement(deltas))
-}
+async fn sample_phase_lengths(state_machine: &impl EncoderStateMachine) -> PhaseLengths {
+    async fn try_sample_phase_lengths(
+        state_machine: &impl EncoderStateMachine,
+    ) -> Option<PhaseLengths> {
+        let mut ticker = embassy_time::Ticker::every(Duration::from_millis(1));
 
-async fn take_calibration_mesurement(
-    state_machine: &impl EncoderStateMachine,
-) -> CalibrationMesurement {
+        ticker.next().await;
+        let first = state_machine.read();
+        let (delta_0, second) = sample_next_step_len(state_machine, &mut ticker, first).await?;
+        let (delta_1, third) = sample_next_step_len(state_machine, &mut ticker, second).await?;
+        let (delta_2, forth) = sample_next_step_len(state_machine, &mut ticker, third).await?;
+        let (delta_3, _) = sample_next_step_len(state_machine, &mut ticker, forth).await?;
+        let mut deltas = [delta_0, delta_1, delta_2, delta_3];
+        deltas.rotate_left(first.step.phase());
+        Some(PhaseLengths(deltas))
+    }
     loop {
-        if let Some(mesurement) = try_take_calibration_mesurement(state_machine).await {
+        if let Some(mesurement) = try_sample_phase_lengths(state_machine).await {
             break mesurement;
-        } else {
         }
     }
 }
 
-async fn wait_for_step(
+async fn sample_next_step_len(
     state_machine: &impl EncoderStateMachine,
     ticker: &mut embassy_time::Ticker,
-    first: Measurement,
+    current: Measurement,
 ) -> Option<(u8, Measurement)> {
     loop {
         ticker.next().await;
-        let mesurement = state_machine.read();
+        let next = state_machine.read();
 
-        match mesurement.step.raw() - first.step.raw() {
+        match next.step.raw() - current.step.raw() {
             0 => continue,
             1 => {
                 break {
-                    let delta = mesurement.step_instant - first.step_instant;
+                    let delta = next.step_instant - current.step_instant;
                     if delta <= Duration::from_millis(20) {
-                        Some((delta.as_millis() as u8, mesurement))
+                        Some((delta.as_millis() as u8, next))
                     } else {
                         None
                     }
@@ -72,7 +71,7 @@ mod test {
     use crate::{
         Direction::{self, *},
         Step,
-        calibration::{EncoderStateMachine, take_calibration_mesurement},
+        calibration::{EncoderStateMachine, sample_phase_lengths},
         measurement::tests::MockPio,
     };
 
@@ -135,10 +134,7 @@ mod test {
             ],
         );
         tokio::spawn(runner.run());
-        assert_eq!(
-            take_calibration_mesurement(&sensor).await.0,
-            [10, 10, 10, 10]
-        );
+        assert_eq!(sample_phase_lengths(&sensor).await.0, [10, 10, 10, 10]);
     }
     #[tokio::test]
     async fn unbalanced_mesurement() {
@@ -153,7 +149,7 @@ mod test {
         );
 
         tokio::spawn(runner.run());
-        assert_eq!(take_calibration_mesurement(&sensor).await.0, [5, 10, 20, 5]);
+        assert_eq!(sample_phase_lengths(&sensor).await.0, [5, 10, 20, 5]);
     }
     async fn run_with_offset(i: i32, expected: [u8; 4]) {
         let (sensor, runner) = MockSensor::new(
@@ -166,7 +162,7 @@ mod test {
             ],
         );
         tokio::spawn(runner.run());
-        let foo = take_calibration_mesurement(&sensor).await.0;
+        let foo = sample_phase_lengths(&sensor).await.0;
         assert_eq!(foo, expected);
     }
 
@@ -204,9 +200,24 @@ mod test {
         );
 
         tokio::spawn(runner.run());
-        assert_eq!(
-            take_calibration_mesurement(&sensor).await.0,
-            [11, 20, 4, 10]
+        assert_eq!(sample_phase_lengths(&sensor).await.0, [11, 20, 4, 10]);
+    }
+    #[tokio::test]
+    async fn exclude_non_adjacent_steps() {
+        let (sensor, runner) = MockSensor::new(
+            (Step::new(0), CounterClockwise, Instant::from_millis(0)),
+            vec![
+                (Duration::from_millis(1), Step::new(1)),
+                // Step count jumps so throw out partial sample.
+                (Duration::from_millis(3), Step::new(3)),
+                (Duration::from_millis(4), Step::new(4)),
+                (Duration::from_millis(5), Step::new(5)),
+                (Duration::from_millis(6), Step::new(6)),
+                (Duration::from_millis(7), Step::new(7)),
+            ],
         );
+
+        tokio::spawn(runner.run());
+        assert_eq!(sample_phase_lengths(&sensor).await.0, [7, 4, 5, 6,]);
     }
 }
