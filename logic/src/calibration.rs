@@ -60,11 +60,9 @@ async fn sample_next_step_len(
     }?;
 
     let delta_t = next_step.step_instant - current.step_instant;
-    //let changed_direction = current.direction != next_step.direction;
+    let changed_direction = current.direction != next_step.direction;
 
-    if
-    /*changed_direction ||*/
-    delta_t > Duration::from_millis(20) {
+    if changed_direction || delta_t > Duration::from_millis(20) {
         None
     } else {
         Some((delta_t.as_millis() as u8, next_step))
@@ -243,5 +241,52 @@ mod test {
 
         tokio::spawn(runner.run());
         assert_eq!(sample_phase_lengths(&sensor).await.0, [7, 4, 5, 6,]);
+    }
+    #[tokio::test]
+    async fn jump_forward_momentaraly() {
+        let (sensor, runner) = MockSensor::new(
+            (Step::new(0), CounterClockwise, Instant::from_millis(0)),
+            vec![
+                (Duration::from_millis(1), Step::new(1)),
+                (Duration::from_millis(2), Step::new(2)),
+                (
+                    Duration::from_millis(3) - Duration::from_micros(10),
+                    Step::new(3),
+                ),
+                //Jump forward
+                (Duration::from_micros(1), Step::new(10)),
+                //Jump back
+                (Duration::from_micros(1), Step::new(3)),
+                //Resume
+                (Duration::from_millis(4), Step::new(4)),
+                (Duration::from_millis(5), Step::new(5)),
+                (Duration::from_millis(6), Step::new(6)),
+                (Duration::from_millis(7), Step::new(7)),
+                (Duration::from_millis(8), Step::new(8)),
+            ],
+        );
+
+        tokio::spawn(runner.run());
+        assert_eq!(sample_phase_lengths(&sensor).await.0, [5, 6, 7, 8]);
+    }
+    #[tokio::test]
+    async fn jump_back_momentaraly() {
+        let (sensor, runner) = MockSensor::new(
+            (Step::new(0), CounterClockwise, Instant::from_millis(0)),
+            vec![
+                (Duration::from_millis(1), Step::new(1)),
+                (Duration::from_millis(2), Step::new(2)),
+                (Duration::from_millis(3), Step::new(3)),
+                //Jump back
+                (Duration::from_micros(1), Step::new(0)),
+                // Jump forward (Keep sampling since there is no real way to distinguish current
+                // state from the state right before the jump)
+                (Duration::from_micros(1), Step::new(3)),
+                (Duration::from_millis(4), Step::new(4)),
+            ],
+        );
+
+        tokio::spawn(runner.run());
+        assert_eq!(sample_phase_lengths(&sensor).await.0, [1, 2, 3, 4]);
     }
 }
