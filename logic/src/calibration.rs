@@ -67,7 +67,7 @@ async fn wait_for_step(
 mod test {
     use std::sync::{Arc, Mutex};
 
-    use embassy_time::{Instant, Timer};
+    use embassy_time::{Duration, Instant, Timer};
 
     use crate::{
         Direction::{self, *},
@@ -81,19 +81,14 @@ mod test {
     }
     struct MockSensorRunner {
         mock: Arc<Mutex<MockPio>>,
-        events: Vec<(Instant, Step)>,
+        events: Vec<(Duration, Step)>,
     }
 
     impl MockSensor {
         fn new(
             inital_conditions: (Step, Direction, Instant),
-            events: Vec<(Instant, Step)>,
+            events: Vec<(Duration, Step)>,
         ) -> (Self, MockSensorRunner) {
-            assert!(
-                events.iter().map(|x| x.0).is_sorted(),
-                "Event timestamps must always be increatsing: {:?}",
-                events
-            );
             let mock = Arc::new(Mutex::new(MockPio::new(
                 inital_conditions.0,
                 inital_conditions.1,
@@ -107,12 +102,14 @@ mod test {
     }
     impl MockSensorRunner {
         async fn run(self) {
-            for (time, step) in self.events {
-                Timer::at(time).await;
-                self.mock.lock().unwrap().position_change(step, time);
+            let mut event_time = Instant::from_millis(0);
+            for (delta_t, step) in self.events {
+                event_time += delta_t;
+                Timer::at(event_time).await;
+                self.mock.lock().unwrap().position_change(step, event_time);
             }
             Timer::after_secs(1).await;
-            //panic!("ran out of mesurements");
+            panic!("ran out of mesurements");
         }
     }
 
@@ -130,11 +127,11 @@ mod test {
         let (sensor, runner) = MockSensor::new(
             (Step::new(0), CounterClockwise, Instant::from_millis(0)),
             vec![
-                (Instant::from_millis(10), Step::new(1)),
-                (Instant::from_millis(20), Step::new(2)),
-                (Instant::from_millis(30), Step::new(3)),
-                (Instant::from_millis(40), Step::new(4)),
-                (Instant::from_millis(50), Step::new(5)),
+                (Duration::from_millis(10), Step::new(1)),
+                (Duration::from_millis(10), Step::new(2)),
+                (Duration::from_millis(10), Step::new(3)),
+                (Duration::from_millis(10), Step::new(4)),
+                (Duration::from_millis(10), Step::new(5)),
             ],
         );
         tokio::spawn(runner.run());
@@ -148,10 +145,10 @@ mod test {
         let (sensor, runner) = MockSensor::new(
             (Step::new(0), CounterClockwise, Instant::from_millis(0)),
             vec![
-                (Instant::from_millis(5), Step::new(1)),
-                (Instant::from_millis(15), Step::new(2)),
-                (Instant::from_millis(35), Step::new(3)),
-                (Instant::from_millis(40), Step::new(4)),
+                (Duration::from_millis(5), Step::new(1)),
+                (Duration::from_millis(10), Step::new(2)),
+                (Duration::from_millis(20), Step::new(3)),
+                (Duration::from_millis(5), Step::new(4)),
             ],
         );
 
@@ -162,10 +159,10 @@ mod test {
         let (sensor, runner) = MockSensor::new(
             (Step::new(0 + i), CounterClockwise, Instant::from_millis(0)),
             vec![
-                (Instant::from_millis(1), Step::new(1 + i)),
-                (Instant::from_millis(3), Step::new(2 + i)),
-                (Instant::from_millis(6), Step::new(3 + i)),
-                (Instant::from_millis(10), Step::new(4 + i)),
+                (Duration::from_millis(1), Step::new(1 + i)),
+                (Duration::from_millis(2), Step::new(2 + i)),
+                (Duration::from_millis(3), Step::new(3 + i)),
+                (Duration::from_millis(4), Step::new(4 + i)),
             ],
         );
         tokio::spawn(runner.run());
@@ -195,14 +192,14 @@ mod test {
             (Step::new(0), CounterClockwise, Instant::from_millis(0)),
             vec![
                 // starting to sample
-                (Instant::from_millis(10), Step::new(1)),
+                (Duration::from_millis(10), Step::new(1)),
                 // To large a time delta clear out buffer
-                (Instant::from_millis(31), Step::new(2)),
-                //
-                (Instant::from_millis(35), Step::new(3)),
-                (Instant::from_millis(45), Step::new(4)),
-                (Instant::from_millis(56), Step::new(5)),
-                (Instant::from_millis(76), Step::new(6)),
+                (Duration::from_millis(21), Step::new(2)),
+                (Duration::from_millis(4), Step::new(3)),
+                (Duration::from_millis(10), Step::new(4)),
+                (Duration::from_millis(11), Step::new(5)),
+                // Max allowed time delta
+                (Duration::from_millis(20), Step::new(6)),
             ],
         );
 
