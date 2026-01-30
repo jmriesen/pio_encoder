@@ -38,7 +38,7 @@ impl Step {
         )]
         Self(Wrapping(step as u32))
     }
-    fn phase(self) -> usize {
+    pub fn phase(self) -> usize {
         //Get raw steps remainder when divided by 4
         (self.0.0 & 3) as usize
     }

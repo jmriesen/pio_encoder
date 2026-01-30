@@ -14,6 +14,8 @@ pub use measurement::Measurement;
 mod step;
 pub use step::{Step, SubStep};
 
+mod calibration;
+
 type CalibrationData = [u8; 4];
 /// Default calibration value that assumes each encoder tick is the same size
 const EQUAL_STEPS: CalibrationData = [0, 64, 128, 192];

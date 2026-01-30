@@ -9,7 +9,8 @@ defmt = { version = "1.0.1", optional = true }
 mutants = "0.0.3"
 
 [dev-dependencies]
-embassy-time = { version = "0.5.0", features = [ "std" ]}
+tokio = { version = "1.49.0", features = ["test-util", "rt", "macros"] }
+embassy-time = { version = "0.5.0", features = [ "std","generic-queue-8" ]}
 
 [features]
 defmt = ["embassy-time/defmt","dep:defmt"]
