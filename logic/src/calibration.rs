@@ -1,6 +1,6 @@
 use embassy_time::Duration;
 
-use crate::Measurement;
+use crate::{Direction, Measurement};
 
 trait EncoderStateMachine {
     /// Returns whatever data is currently stored in the PIO State Machine.
@@ -44,37 +44,30 @@ async fn sample_next_step_len(
     ticker: &mut embassy_time::Ticker,
     current: Measurement,
 ) -> Option<(u8, Measurement)> {
-    loop {
+    let next_step = loop {
         ticker.next().await;
         let next = state_machine.read();
-        if current.direction != next.direction {
-            break None;
-        } else {
-            match next.step.raw() - current.step.raw() {
-                1 => {
-                    break {
-                        let delta = next.step_instant - current.step_instant;
-                        if delta <= Duration::from_millis(20) {
-                            Some((delta.as_millis() as u8, next))
-                        } else {
-                            None
-                        }
-                    };
-                }
-                -1 => {
-                    break {
-                        let delta = next.step_instant - current.step_instant;
-                        if delta <= Duration::from_millis(20) {
-                            Some((delta.as_millis() as u8, next))
-                        } else {
-                            None
-                        }
-                    };
-                }
-                0 => continue,
-                _ => break None,
+        match next.step.raw() - current.step.raw() {
+            1 if current.direction == Direction::CounterClockwise => {
+                break Some(next);
             }
+            -1 if current.direction == Direction::Clockwise => {
+                break Some(next);
+            }
+            0 => continue,
+            _ => break None,
         }
+    }?;
+
+    let delta_t = next_step.step_instant - current.step_instant;
+    //let changed_direction = current.direction != next_step.direction;
+
+    if
+    /*changed_direction ||*/
+    delta_t > Duration::from_millis(20) {
+        None
+    } else {
+        Some((delta_t.as_millis() as u8, next_step))
     }
 }
 
