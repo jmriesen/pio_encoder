@@ -11,7 +11,7 @@ trait EncoderStateMachine {
 
 /// Represents a measure of how long each phase takes.
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
-struct PhaseLengths([u8; 4]);
+struct PhaseLengths([Duration; 4]);
 
 async fn sample_phase_lengths(state_machine: &impl EncoderStateMachine) -> PhaseLengths {
     async fn try_sample_phase_lengths(
@@ -43,7 +43,7 @@ async fn sample_next_step_len(
     state_machine: &impl EncoderStateMachine,
     ticker: &mut embassy_time::Ticker,
     current: Measurement,
-) -> Option<(u8, Measurement)> {
+) -> Option<(Duration, Measurement)> {
     let next_step = loop {
         ticker.next().await;
         let next = state_machine.read();
@@ -65,8 +65,63 @@ async fn sample_next_step_len(
     if changed_direction || delta_t > Duration::from_millis(20) {
         None
     } else {
-        Some((delta_t.as_millis() as u8, next_step))
+        Some((delta_t, next_step))
     }
+}
+
+async fn calibrate_encoder(state_machine: &impl EncoderStateMachine) -> [u8; 4] {
+    const RESCALE_THRESHOLD: Duration = Duration::from_millis(2_500_000);
+    // Using a const block to assert that even for the max duration value (below our chosen
+    // threshold) will not cause the normalization function to panic.
+    const {
+        if normalize(RESCALE_THRESHOLD, RESCALE_THRESHOLD) != u8::MAX {
+            panic!()
+        }
+    }
+    ///Scales a duration 0s-total_time into an u8 0-u8::Max
+    const fn normalize(value: Duration, total_time: Duration) -> u8 {
+        //Adding half the divisor before divide is a trick to round
+        let half_total = total_time.as_millis() / 2;
+        let numerator = /*Expression A*/ value.as_millis() * u8::MAX as u64 + half_total;
+        let normalized_value = (numerator) / total_time.as_millis();
+        normalized_value as u8
+    }
+    let mut phase_lengths = PhaseLengths([Duration::from_millis(0); 4]);
+    // Number of samples to take (just a heuristic)
+    // this never actually stops in the original we just don't kick in until 32 samples.
+    for _ in 0..32 {
+        let sample = sample_phase_lengths(state_machine).await;
+        add_arrays(&mut phase_lengths, sample);
+        if phase_lengths.0.iter().cloned().sum::<Duration>() > RESCALE_THRESHOLD {
+            for val in phase_lengths.0.iter_mut() {
+                *val /= 2;
+            }
+        }
+    }
+    let cycle_start_to_phase_start = [
+        //The first phase definitionally starts immediately,
+        Duration::from_millis(0),
+        phase_lengths.0[0],
+        phase_lengths.0[0] + phase_lengths.0[1],
+        phase_lengths.0[0] + phase_lengths.0[1] + phase_lengths.0[3],
+    ];
+    let total_time: Duration = phase_lengths.0.iter().cloned().sum();
+    cycle_start_to_phase_start.map(|duration| normalize(duration, total_time))
+}
+
+fn add_arrays(accumulator: &mut PhaseLengths, new: PhaseLengths) {
+    for (accumulator, new_value) in accumulator.0.iter_mut().zip(new.0.into_iter()) {
+        *accumulator += new_value
+    }
+}
+
+/// Convert from array of % of cycle to array of `Substep` start positions
+fn format_as_calibration_data(normalized: [u8; 4]) -> [u8; 4] {
+    let first = 0;
+    let second = normalized[0];
+    let third = second + normalized[1];
+    let forth = third + normalized[2];
+    [first, second, third, forth]
 }
 
 #[cfg(test)]
@@ -78,7 +133,7 @@ mod test {
     use crate::{
         Direction::{self, *},
         Step,
-        calibration::{EncoderStateMachine, sample_phase_lengths},
+        calibration::{EncoderStateMachine, format_as_calibration_data, sample_phase_lengths},
         measurement::tests::MockPio,
     };
 
@@ -141,7 +196,10 @@ mod test {
             ],
         );
         tokio::spawn(runner.run());
-        assert_eq!(sample_phase_lengths(&sensor).await.0, [10, 10, 10, 10]);
+        assert_eq!(
+            sample_phase_lengths(&sensor).await.0,
+            [10, 10, 10, 10].map(Duration::from_millis)
+        );
     }
     #[tokio::test()]
     async fn balanced_mesurement_clockwise() {
@@ -156,7 +214,10 @@ mod test {
             ],
         );
         tokio::spawn(runner.run());
-        assert_eq!(sample_phase_lengths(&sensor).await.0, [10, 10, 10, 10]);
+        assert_eq!(
+            sample_phase_lengths(&sensor).await.0,
+            [10, 10, 10, 10].map(Duration::from_millis)
+        );
     }
     #[tokio::test]
     async fn unbalanced_mesurement() {
@@ -171,9 +232,12 @@ mod test {
         );
 
         tokio::spawn(runner.run());
-        assert_eq!(sample_phase_lengths(&sensor).await.0, [5, 10, 20, 5]);
+        assert_eq!(
+            sample_phase_lengths(&sensor).await.0,
+            [5, 10, 20, 5].map(Duration::from_millis)
+        );
     }
-    async fn run_with_offset(i: i32, expected: [u8; 4]) {
+    async fn run_with_offset(i: i32, expected: [u64; 4]) {
         let (sensor, runner) = MockSensor::new(
             (Step::new(0 + i), CounterClockwise, Instant::from_millis(0)),
             vec![
@@ -185,7 +249,7 @@ mod test {
         );
         tokio::spawn(runner.run());
         let foo = sample_phase_lengths(&sensor).await.0;
-        assert_eq!(foo, expected);
+        assert_eq!(foo, expected.map(Duration::from_millis));
     }
 
     #[tokio::test]
@@ -222,7 +286,10 @@ mod test {
         );
 
         tokio::spawn(runner.run());
-        assert_eq!(sample_phase_lengths(&sensor).await.0, [11, 20, 4, 10]);
+        assert_eq!(
+            sample_phase_lengths(&sensor).await.0,
+            [11, 20, 4, 10].map(Duration::from_millis)
+        );
     }
     #[tokio::test]
     async fn exclude_non_adjacent_steps() {
@@ -240,7 +307,10 @@ mod test {
         );
 
         tokio::spawn(runner.run());
-        assert_eq!(sample_phase_lengths(&sensor).await.0, [7, 4, 5, 6,]);
+        assert_eq!(
+            sample_phase_lengths(&sensor).await.0,
+            [7, 4, 5, 6,].map(Duration::from_millis)
+        );
     }
     #[tokio::test]
     async fn jump_forward_momentaraly() {
@@ -267,7 +337,10 @@ mod test {
         );
 
         tokio::spawn(runner.run());
-        assert_eq!(sample_phase_lengths(&sensor).await.0, [5, 6, 7, 8]);
+        assert_eq!(
+            sample_phase_lengths(&sensor).await.0,
+            [5, 6, 7, 8].map(Duration::from_millis)
+        );
     }
     #[tokio::test]
     async fn jump_back_momentaraly() {
@@ -276,7 +349,11 @@ mod test {
             vec![
                 (Duration::from_millis(1), Step::new(1)),
                 (Duration::from_millis(2), Step::new(2)),
-                (Duration::from_millis(3), Step::new(3)),
+                (
+                    // Subtracting 2 to compensate for the two jumps
+                    Duration::from_millis(3) - Duration::from_micros(2),
+                    Step::new(3),
+                ),
                 //Jump back
                 (Duration::from_micros(1), Step::new(0)),
                 // Jump forward (Keep sampling since there is no real way to distinguish current
@@ -287,6 +364,9 @@ mod test {
         );
 
         tokio::spawn(runner.run());
-        assert_eq!(sample_phase_lengths(&sensor).await.0, [1, 2, 3, 4]);
+        assert_eq!(
+            sample_phase_lengths(&sensor).await.0,
+            [1, 2, 3, 4].map(Duration::from_millis)
+        );
     }
 }
