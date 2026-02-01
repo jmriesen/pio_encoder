@@ -1,4 +1,6 @@
-use embassy_time::Duration;
+use core::ops::AddAssign;
+
+use embassy_time::{Duration, Ticker};
 
 use crate::{Direction, Measurement};
 
@@ -9,23 +11,75 @@ trait EncoderStateMachine {
     fn read(&self) -> Measurement;
 }
 
+///Max value of PhaseLengths sample data before we have to rescale.
+// Chosen since it is the largest a power of 16 that does not cause an overflow when passed to `normalize`
+const RESCALE_THRESHOLD: Duration = Duration::from_secs(0xF_FF_FF_FF_FF);
+
 /// Represents a measure of how long each phase takes.
+// Index 0 represents the length of ticks 0,4,8... index 1 ticks 1,5,7 ext.
+// Absolute values of each index is not meaningful, but their relative magnitudes is.
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 struct PhaseLengths([Duration; 4]);
 
+impl AddAssign for PhaseLengths {
+    fn add_assign(&mut self, rhs: Self) {
+        for i in 0..self.0.len() {
+            self.0[i] += rhs.0[i]
+        }
+        if self.inner_sum() > RESCALE_THRESHOLD {
+            for entry in &mut self.0 {
+                *entry /= 2
+            }
+        }
+    }
+}
+
+impl PhaseLengths {
+    /// Sum of all the phase lengths
+    /// Used for resizing and normalizing data.
+    fn inner_sum(&self) -> Duration {
+        self.0.iter().cloned().sum::<Duration>()
+    }
+
+    pub fn to_configuration_data(&self) -> [u8; 4] {
+        const {
+            // if `RESCALE_THRESHOLD` does not panic when passed to normalize nothing smaller than
+            // it should either. (checking at compile time)
+            assert!(255 == normalize(RESCALE_THRESHOLD, RESCALE_THRESHOLD))
+        }
+        ///Scales a duration 0s-total_time into an u8 0-u8::Max
+        const fn normalize(value: Duration, total_time: Duration) -> u8 {
+            //Adding half the divisor before divide is a trick to round rather than truncate.
+            let half_total = total_time.as_ticks() / 2;
+            let numerator = u8::MAX as u64 * value.as_ticks() + half_total;
+            let normalized_value = numerator / total_time.as_ticks();
+            normalized_value as u8
+        }
+        let cycle_start_to_phase_start = [
+            //The first phase definitionally starts immediately,
+            Duration::from_millis(0),
+            self.0[0],
+            self.0[0] + self.0[1],
+            self.0[0] + self.0[1] + self.0[3],
+        ];
+        cycle_start_to_phase_start.map(|duration| normalize(duration, self.inner_sum()))
+    }
+}
+
+/// Repeatedly attempt to sample data until we have a duration for each step of a cycle.
 async fn sample_phase_lengths(state_machine: &impl EncoderStateMachine) -> PhaseLengths {
     async fn try_sample_phase_lengths(
         state_machine: &impl EncoderStateMachine,
     ) -> Option<PhaseLengths> {
-        let mut ticker = embassy_time::Ticker::every(Duration::from_millis(1));
+        let mut ticker = Ticker::every(Duration::from_millis(1));
         ticker.next().await;
         let inital = state_machine.read();
 
         // sample cycle
-        let (delta_0, current) = sample_next_step_len(state_machine, &mut ticker, inital).await?;
-        let (delta_1, currnet) = sample_next_step_len(state_machine, &mut ticker, current).await?;
-        let (delta_2, current) = sample_next_step_len(state_machine, &mut ticker, currnet).await?;
-        let (delta_3, _) = sample_next_step_len(state_machine, &mut ticker, current).await?;
+        let (delta_0, current) = sample_step_len(state_machine, &mut ticker, inital).await?;
+        let (delta_1, currnet) = sample_step_len(state_machine, &mut ticker, current).await?;
+        let (delta_2, current) = sample_step_len(state_machine, &mut ticker, currnet).await?;
+        let (delta_3, _) = sample_step_len(state_machine, &mut ticker, current).await?;
 
         // Adjust to for starting phase
         let mut deltas = [delta_0, delta_1, delta_2, delta_3];
@@ -39,9 +93,9 @@ async fn sample_phase_lengths(state_machine: &impl EncoderStateMachine) -> Phase
     }
 }
 
-async fn sample_next_step_len(
+async fn sample_step_len(
     state_machine: &impl EncoderStateMachine,
-    ticker: &mut embassy_time::Ticker,
+    ticker: &mut Ticker,
     current: Measurement,
 ) -> Option<(Duration, Measurement)> {
     let next_step = loop {
@@ -70,58 +124,13 @@ async fn sample_next_step_len(
 }
 
 async fn calibrate_encoder(state_machine: &impl EncoderStateMachine) -> [u8; 4] {
-    const RESCALE_THRESHOLD: Duration = Duration::from_millis(2_500_000);
-    // Using a const block to assert that even for the max duration value (below our chosen
-    // threshold) will not cause the normalization function to panic.
-    const {
-        if normalize(RESCALE_THRESHOLD, RESCALE_THRESHOLD) != u8::MAX {
-            panic!()
-        }
-    }
-    ///Scales a duration 0s-total_time into an u8 0-u8::Max
-    const fn normalize(value: Duration, total_time: Duration) -> u8 {
-        //Adding half the divisor before divide is a trick to round
-        let half_total = total_time.as_millis() / 2;
-        let numerator = /*Expression A*/ value.as_millis() * u8::MAX as u64 + half_total;
-        let normalized_value = (numerator) / total_time.as_millis();
-        normalized_value as u8
-    }
-    let mut phase_lengths = PhaseLengths([Duration::from_millis(0); 4]);
+    let mut running_total = PhaseLengths([Duration::from_millis(0); 4]);
     // Number of samples to take (just a heuristic)
-    // this never actually stops in the original we just don't kick in until 32 samples.
     for _ in 0..32 {
         let sample = sample_phase_lengths(state_machine).await;
-        add_arrays(&mut phase_lengths, sample);
-        if phase_lengths.0.iter().cloned().sum::<Duration>() > RESCALE_THRESHOLD {
-            for val in phase_lengths.0.iter_mut() {
-                *val /= 2;
-            }
-        }
+        running_total += sample;
     }
-    let cycle_start_to_phase_start = [
-        //The first phase definitionally starts immediately,
-        Duration::from_millis(0),
-        phase_lengths.0[0],
-        phase_lengths.0[0] + phase_lengths.0[1],
-        phase_lengths.0[0] + phase_lengths.0[1] + phase_lengths.0[3],
-    ];
-    let total_time: Duration = phase_lengths.0.iter().cloned().sum();
-    cycle_start_to_phase_start.map(|duration| normalize(duration, total_time))
-}
-
-fn add_arrays(accumulator: &mut PhaseLengths, new: PhaseLengths) {
-    for (accumulator, new_value) in accumulator.0.iter_mut().zip(new.0.into_iter()) {
-        *accumulator += new_value
-    }
-}
-
-/// Convert from array of % of cycle to array of `Substep` start positions
-fn format_as_calibration_data(normalized: [u8; 4]) -> [u8; 4] {
-    let first = 0;
-    let second = normalized[0];
-    let third = second + normalized[1];
-    let forth = third + normalized[2];
-    [first, second, third, forth]
+    running_total.to_configuration_data()
 }
 
 #[cfg(test)]
@@ -133,7 +142,7 @@ mod test {
     use crate::{
         Direction::{self, *},
         Step,
-        calibration::{EncoderStateMachine, format_as_calibration_data, sample_phase_lengths},
+        calibration::{EncoderStateMachine, sample_phase_lengths},
         measurement::tests::MockPio,
     };
 
