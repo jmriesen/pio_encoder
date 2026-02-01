@@ -46,8 +46,11 @@ impl Step {
     pub fn lower_bound(self, calibration: &CalibrationData) -> SubStep {
         //Extract the whole number of cycles
         let whole_cycles = self.0 / Wrapping(4);
-        let partial_cycle = Wrapping(u32::from(calibration[self.phase()]));
-        SubStep((whole_cycles << 8) + partial_cycle)
+        let whole_cycles = SubStep(whole_cycles << 8);
+
+        //Use calibration data to figure out where the phase starts
+        let partial_cycle = calibration[self.phase()];
+        whole_cycles + partial_cycle
     }
     pub fn upper_bound(self, calibration: &CalibrationData) -> SubStep {
         Self(self.0 + Wrapping(1)).lower_bound(calibration)
@@ -85,7 +88,7 @@ impl Step {
 }
 
 impl SubStep {
-    pub fn new(step: i32) -> Self {
+    pub const fn new(step: i32) -> Self {
         #[allow(
             clippy::cast_sign_loss,
             reason = "we are casting to a u32 specifly to take advantage of the wrapping behavior. This casting is inverted before the raw value ever leaves this modual"

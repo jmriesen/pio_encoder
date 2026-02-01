@@ -4,6 +4,8 @@
 #![cfg_attr(not(test), no_std)]
 #![warn(clippy::pedantic)]
 #![allow(clippy::must_use_candidate)]
+use core::ops::Index;
+
 use embassy_time::Duration;
 pub mod encodeing;
 mod speed;
@@ -14,11 +16,19 @@ pub use measurement::Measurement;
 mod step;
 pub use step::{Step, SubStep};
 
-mod calibration;
+use crate::calibration::EQUAL_STEPS;
 
-type CalibrationData = [u8; 4];
-/// Default calibration value that assumes each encoder tick is the same size
-const EQUAL_STEPS: CalibrationData = [0, 64, 128, 192];
+mod calibration;
+//Calibration data is really a mapping from phase to subsets
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub struct CalibrationData([SubStep; 4]);
+impl Index<usize> for CalibrationData {
+    type Output = SubStep;
+
+    fn index(&self, index: usize) -> &Self::Output {
+        &self.0[index]
+    }
+}
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
@@ -79,6 +89,7 @@ impl<const IDLE_STOPING_TIME_MS: u64> EncoderState<IDLE_STOPING_TIME_MS> {
 
     ///Initialize a new encoder state.
     pub fn new(inital_conditions: Measurement) -> Self {
+        //TODO: update to use something other than equal steps
         let calibration_data = EQUAL_STEPS;
         EncoderState {
             calibration_data,

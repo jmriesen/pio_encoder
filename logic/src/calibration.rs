@@ -2,7 +2,8 @@ use core::ops::AddAssign;
 
 use embassy_time::{Duration, Ticker};
 
-use crate::{Direction, Measurement};
+use crate::CalibrationData;
+use crate::{Direction, Measurement, SubStep};
 
 trait EncoderStateMachine {
     /// Returns whatever data is currently stored in the PIO State Machine.
@@ -10,6 +11,14 @@ trait EncoderStateMachine {
     /// VALUES***
     fn read(&self) -> Measurement;
 }
+
+/// Default calibration value that assumes each encoder tick is the same size
+pub const EQUAL_STEPS: CalibrationData = CalibrationData([
+    SubStep::new(0),
+    SubStep::new(64),
+    SubStep::new(128),
+    SubStep::new(192),
+]);
 
 ///Max value of PhaseLengths sample data before we have to rescale.
 // Chosen since it is the largest a power of 16 that does not cause an overflow when passed to `normalize`
@@ -40,29 +49,34 @@ impl PhaseLengths {
     fn inner_sum(&self) -> Duration {
         self.0.iter().cloned().sum::<Duration>()
     }
-
-    pub fn to_configuration_data(&self) -> [u8; 4] {
+}
+impl From<PhaseLengths> for CalibrationData {
+    fn from(phase_data: PhaseLengths) -> CalibrationData {
         const {
             // if `RESCALE_THRESHOLD` does not panic when passed to normalize nothing smaller than
             // it should either. (checking at compile time)
             assert!(255 == normalize(RESCALE_THRESHOLD, RESCALE_THRESHOLD))
         }
-        ///Scales a duration 0s-total_time into an u8 0-u8::Max
-        const fn normalize(value: Duration, total_time: Duration) -> u8 {
+        ///Scales a duration 0s-total_time into an u8 0-255::Max
+        const fn normalize(value: Duration, total_time: Duration) -> i32 {
             //Adding half the divisor before divide is a trick to round rather than truncate.
             let half_total = total_time.as_ticks() / 2;
             let numerator = u8::MAX as u64 * value.as_ticks() + half_total;
             let normalized_value = numerator / total_time.as_ticks();
-            normalized_value as u8
+            normalized_value as i32
         }
-        let cycle_start_to_phase_start = [
+        let calibration_data = [
             //The first phase definitionally starts immediately,
             Duration::from_millis(0),
-            self.0[0],
-            self.0[0] + self.0[1],
-            self.0[0] + self.0[1] + self.0[3],
+            phase_data.0[0],
+            phase_data.0[0] + phase_data.0[1],
+            phase_data.0[0] + phase_data.0[1] + phase_data.0[3],
         ];
-        cycle_start_to_phase_start.map(|duration| normalize(duration, self.inner_sum()))
+        CalibrationData(
+            calibration_data
+                .map(|duration| normalize(duration, phase_data.inner_sum()))
+                .map(SubStep::new),
+        )
     }
 }
 
@@ -123,14 +137,14 @@ async fn sample_step_len(
     }
 }
 
-async fn calibrate_encoder(state_machine: &impl EncoderStateMachine) -> [u8; 4] {
+async fn calibrate_encoder(state_machine: &impl EncoderStateMachine) -> CalibrationData {
     let mut running_total = PhaseLengths([Duration::from_millis(0); 4]);
     // Number of samples to take (just a heuristic)
     for _ in 0..32 {
         let sample = sample_phase_lengths(state_machine).await;
         running_total += sample;
     }
-    running_total.to_configuration_data()
+    running_total.into()
 }
 
 #[cfg(test)]
