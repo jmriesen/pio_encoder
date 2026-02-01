@@ -14,11 +14,17 @@ mod measurement;
 pub use encodeing::DirectionDuration;
 pub use measurement::Measurement;
 mod step;
-pub use step::{Step, SubStep};
-
 use crate::calibration::EQUAL_STEPS;
-
+pub use step::{Step, SubStep};
 mod calibration;
+
+trait EncoderStateMachine {
+    /// Returns whatever data is currently stored in the PIO State Machine.
+    /// Since this reflects real world data, repeated calls to read ***CAN RESULT IN Different
+    /// VALUES***
+    fn read(&self) -> Measurement;
+}
+
 //Calibration data is really a mapping from phase to subsets
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub struct CalibrationData([SubStep; 4]);

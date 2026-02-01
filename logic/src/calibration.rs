@@ -2,15 +2,8 @@ use core::ops::AddAssign;
 
 use embassy_time::{Duration, Ticker};
 
-use crate::CalibrationData;
+use crate::{CalibrationData, EncoderStateMachine};
 use crate::{Direction, Measurement, SubStep};
-
-trait EncoderStateMachine {
-    /// Returns whatever data is currently stored in the PIO State Machine.
-    /// Since this reflects real world data, repeated calls to read ***CAN RESULT IN Different
-    /// VALUES***
-    fn read(&self) -> Measurement;
-}
 
 /// Default calibration value that assumes each encoder tick is the same size
 pub const EQUAL_STEPS: CalibrationData = CalibrationData([
