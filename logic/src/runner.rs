@@ -1,54 +1,34 @@
 //! This crate contains all the logic assisted with parsing pio messages and calculating speed.
 //! This crate specificity does **not** depend on embassy-rs.
 //! Depending on embassy-rs would prevent me from running the unit test on my base machine.
-#![cfg_attr(not(test), no_std)]
-#![warn(clippy::pedantic)]
-#![allow(clippy::must_use_candidate)]
-use core::ops::Index;
-
-use embassy_time::Duration;
-pub mod encodeing;
-mod speed;
-pub use speed::Speed;
-mod measurement;
-pub use encodeing::DirectionDuration;
-pub use measurement::Measurement;
-mod step;
-use crate::calibration::EQUAL_STEPS;
-pub use step::{Step, SubStep};
-mod calibration;
-
-mod runner;
-
-pub trait EncoderStateMachine {
-    /// Returns whatever data is currently stored in the PIO State Machine.
-    /// Since this reflects real world data, repeated calls to read ***CAN RESULT IN Different
-    /// VALUES***
-    fn read(&self) -> Measurement;
-}
-
-//Calibration data is really a mapping from phase to subsets
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
-pub struct CalibrationData([SubStep; 4]);
-impl Index<usize> for CalibrationData {
-    type Output = SubStep;
-
-    fn index(&self, index: usize) -> &Self::Output {
-        &self.0[index]
-    }
-}
+use crate::{
+    Direction, EncoderStateMachine, Measurement, Speed, Step, SubStep, calibration::EQUAL_STEPS,
+};
+use embassy_sync::{
+    blocking_mutex::raw::{CriticalSectionRawMutex, NoopRawMutex},
+    watch::{Sender, Watch},
+};
+use embassy_time::{Duration, Ticker};
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
-pub enum Direction {
-    Clockwise,
-    CounterClockwise,
+struct Status {
+    speed: Speed,
+    step: Step,
+    position: SubStep,
+    direction: Direction,
 }
-impl Direction {
-    pub fn invert(&self) -> Self {
-        match self {
-            Direction::Clockwise => Direction::CounterClockwise,
-            Direction::CounterClockwise => Direction::Clockwise,
+
+// TODO: make generic over watchers and raw mutex
+/// Resources required for the encoder and runner to talk to each other
+pub struct State {
+    watch: Watch<CriticalSectionRawMutex, Status, 10>,
+}
+impl State {
+    pub fn new() -> Self {
+        Self {
+            //TODO: consider switching to new_with
+            watch: Watch::new(),
         }
     }
 }
@@ -56,69 +36,52 @@ impl Direction {
 /// Stores all the logical state required for the sub-step encoder.
 ///
 ///NOTE: this intentionally does not rely on `embasy_rp` as that would prevent me from running the unit tests on my host machine.
-pub struct EncoderRunner<const IDLE_STOPING_TIME_MS: u64> {
-    calibration_data: CalibrationData,
-    last_known_speed: Speed,
-    prev_measurement: Measurement,
+///TODO: Make generic over mutex
+pub struct EncoderRunner<'s, const IDLE_STOPING_TIME_MS: u64, PIO: EncoderStateMachine> {
+    status_sink: Sender<'s, CriticalSectionRawMutex, Status, 10>,
+    pio_state: PIO,
 }
-impl<const IDLE_STOPING_TIME_MS: u64> EncoderRunner<IDLE_STOPING_TIME_MS> {
-    /// Get current encoder speed
-    pub fn speed(&self) -> Speed {
-        self.last_known_speed
-    }
-    /// Get last estimated position in subsets
-    pub fn position(&self) -> SubStep {
-        self.prev_measurement.transition(&self.calibration_data)
-            + self.last_known_speed * (self.prev_measurement.time_since_transition())
-    }
-    /// Get the current encoder step
-    pub fn steps(&self) -> Step {
-        self.prev_measurement.step
+
+impl<'s, const IDLE_STOPING_TIME_MS: u64, PIO: EncoderStateMachine>
+    EncoderRunner<'s, IDLE_STOPING_TIME_MS, PIO>
+{
+    pub fn new(state: &'s State, sensor: PIO) -> Self {
+        Self {
+            status_sink: state.watch.sender(),
+            pio_state: sensor,
+        }
     }
     pub fn idel_stopping_time() -> Duration {
         Duration::from_millis(IDLE_STOPING_TIME_MS)
     }
+    pub async fn run(self, update_rate: Duration) {
+        let mut ticker = Ticker::every(update_rate);
+        let mut last_mesurement = self.pio_state.read();
+        let mut speed = Speed::stopped();
 
-    ///Process a new reading.
-    pub fn update(&mut self, measurement: Measurement) {
-        let new_speed = if measurement.time_since_transition() >= Self::idel_stopping_time() {
-            Speed::stopped()
-        } else {
-            Measurement::estimate_speed(
-                self.last_known_speed,
-                self.prev_measurement,
-                measurement,
-                &self.calibration_data,
-            )
-        };
-        self.last_known_speed = new_speed;
-        self.prev_measurement = measurement;
-    }
-
-    ///Initialize a new encoder state.
-    pub fn new(inital_conditions: Measurement) -> Self {
-        //TODO: update to use something other than equal steps
-        let calibration_data = EQUAL_STEPS;
-        EncoderRunner {
-            calibration_data,
-            // set so we start in the stopped state.
-            last_known_speed: Speed::stopped(),
-            prev_measurement: inital_conditions,
+        loop {
+            ticker.next().await;
+            let current_mesurement = self.pio_state.read();
+            speed = if current_mesurement.time_since_transition() >= Self::idel_stopping_time() {
+                Speed::stopped()
+            } else {
+                Measurement::estimate_speed(
+                    speed,
+                    last_mesurement,
+                    current_mesurement,
+                    &EQUAL_STEPS,
+                )
+            };
+            self.status_sink.send(Status {
+                speed,
+                step: current_mesurement.step,
+                position: current_mesurement.transition(&EQUAL_STEPS)
+                    + speed * (current_mesurement.time_since_transition()),
+                direction: current_mesurement.direction,
+            });
+            last_mesurement = current_mesurement;
         }
     }
-}
-
-/// A speed encoder
-///
-/// This trait exists as a seam so that a mock encoder can be injected when unit testing application
-/// code.
-pub trait Encoder {
-    // Update is used by the encoder to update its internal state.
-    // It should be called regularly.
-    fn update(&mut self);
-    fn speed(&self) -> Speed;
-    fn position(&self) -> SubStep;
-    fn ticks(&self) -> Step;
 }
 
 #[cfg(test)]
@@ -126,14 +89,25 @@ mod tests {
     use crate::{
         Direction::CounterClockwise,
         EQUAL_STEPS, EncoderRunner,
+        calibration::test::MockSensor,
         measurement::{
             Measurement,
             tests::{Event, sequence_events},
         },
+        runner::{State, Status},
         speed::Speed,
         step::{Step, SubStep},
     };
-    use embassy_time::{Duration, Instant};
+    use embassy_sync::watch::Watch;
+    use embassy_time::{Duration, Instant, MockDriver, Timer};
+    async fn advance_embassy_clock() {
+        let driver = MockDriver::get();
+        let mut interval = tokio::time::interval(std::time::Duration::from_micros(50));
+        loop {
+            interval.tick().await;
+            driver.advance(embassy_time::Duration::from_micros(50));
+        }
+    }
     fn simulate_assert(
         measurements: Vec<Measurement>,
         speeds: Vec<Speed>,
@@ -244,35 +218,69 @@ mod tests {
         simulate_assert(measurements, speeds, positions);
     }
 
-    #[test]
-    fn example_from_source_documentation() {
-        //This is the example taken from the readme of the code.
-        //(https://github.com/raspberrypi/pico-examples/tree/master/pio/quadrature_encoder_substep)
-        let measurements = sequence_events(
+    ///This is the example taken from the readme of the code.
+    ///(https://github.com/raspberrypi/pico-examples/tree/master/pio/quadrature_encoder_substep)
+    #[tokio::test(flavor = "current_thread", start_paused = true)]
+    async fn example_from_source_documentation() {
+        let (sensor, mock_runner) = MockSensor::new(
             (Step::new(3), CounterClockwise, Instant::from_millis(0)),
             vec![
-                (Instant::from_millis(0), Event::Mesurement),
-                (Instant::from_millis(21), Event::Step(4)),
-                (Instant::from_millis(30), Event::Mesurement),
-                (Instant::from_millis(34), Event::Step(5)),
-                (Instant::from_millis(40), Event::Mesurement),
-                (Instant::from_millis(49), Event::Step(7)),
-                (Instant::from_millis(50), Event::Mesurement),
+                (Duration::from_millis(21), Step::new(4)),
+                (Duration::from_millis(13), Step::new(5)),
+                (Duration::from_millis(15), Step::new(7)),
             ],
         );
-        let speeds = vec![
-            Speed::stopped(),
-            Speed::new(SubStep::new(64), Duration::from_millis(21)),
-            Speed::new(SubStep::new(64), Duration::from_millis(13)),
-            Speed::new(SubStep::new(128), Duration::from_millis(15)),
+        let state = Box::leak(Box::new(State::new()));
+
+        let encoder_runner = super::EncoderRunner::<30, _>::new(state, sensor);
+
+        tokio::spawn(advance_embassy_clock());
+        tokio::spawn(mock_runner.run());
+        tokio::spawn(encoder_runner.run(Duration::from_millis(10)));
+
+        let mut status = state.watch.receiver().unwrap();
+
+        let expected = vec![
+            (
+                // comment to force vertical formatting
+                Instant::from_millis(1),
+                Speed::stopped(),
+                Step::new(3),
+                Duration::from_millis(0),
+            ),
+            (
+                Instant::from_millis(31),
+                Speed::new(SubStep::new(64), Duration::from_millis(21)),
+                Step::new(4),
+                Duration::from_millis(9),
+            ),
+            (
+                Instant::from_millis(41),
+                Speed::new(SubStep::new(64), Duration::from_millis(13)),
+                Step::new(5),
+                Duration::from_millis(6),
+            ),
+            (
+                Instant::from_millis(51),
+                Speed::new(SubStep::new(128), Duration::from_millis(15)),
+                Step::new(7),
+                Duration::from_millis(1),
+            ),
         ];
-        let positions = vec![
-            Step::new(3).lower_bound(&EQUAL_STEPS),
-            Step::new(4).lower_bound(&EQUAL_STEPS) + speeds[1] * Duration::from_millis(9),
-            Step::new(5).lower_bound(&EQUAL_STEPS) + speeds[2] * Duration::from_millis(6),
-            Step::new(7).lower_bound(&EQUAL_STEPS) + speeds[3] * Duration::from_millis(1),
-        ];
-        simulate_assert(measurements, speeds, positions);
+        for (time, speed, step, time_since_transition) in expected {
+            Timer::at(time).await;
+            assert_eq!(
+                status.get().await,
+                Status {
+                    speed,
+                    step,
+                    // In this example we are always going counterclockwise so position is based
+                    // off the lower bound
+                    position: step.lower_bound(&EQUAL_STEPS) + speed * time_since_transition,
+                    direction: CounterClockwise
+                }
+            )
+        }
     }
 
     #[test]

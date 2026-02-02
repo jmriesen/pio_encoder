@@ -141,7 +141,7 @@ async fn calibrate_encoder(state_machine: &impl EncoderStateMachine) -> Calibrat
 }
 
 #[cfg(test)]
-mod test {
+pub mod test {
     use std::sync::{Arc, Mutex};
 
     use embassy_time::{Duration, Instant, Timer};
@@ -153,16 +153,16 @@ mod test {
         measurement::tests::MockPio,
     };
 
-    struct MockSensor {
+    pub struct MockSensor {
         mock: Arc<Mutex<MockPio>>,
     }
-    struct MockSensorRunner {
+    pub struct MockSensorRunner {
         mock: Arc<Mutex<MockPio>>,
         events: Vec<(Duration, Step)>,
     }
 
     impl MockSensor {
-        fn new(
+        pub fn new(
             inital_conditions: (Step, Direction, Instant),
             events: Vec<(Duration, Step)>,
         ) -> (Self, MockSensorRunner) {
@@ -178,7 +178,7 @@ mod test {
         }
     }
     impl MockSensorRunner {
-        async fn run(self) {
+        pub async fn run(self) {
             let mut event_time = Instant::from_millis(0);
             for (delta_t, step) in self.events {
                 event_time += delta_t;
