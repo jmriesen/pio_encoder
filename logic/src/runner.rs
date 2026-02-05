@@ -224,18 +224,8 @@ mod tests {
                 (Duration::from_millis(15), Step::new(7)),
             ],
         );
-        let state = Box::leak(Box::new(State::new()));
-        let encoder_runner = super::EncoderRunner::<30, _>::new(state, sensor);
-
-        tokio::spawn(mock_runner.run());
-        tokio::spawn(encoder_runner.run(Duration::from_millis(10)));
-        tokio::spawn(advance_embassy_clock());
-
-        let mut status = state.watch.receiver().unwrap();
-
         let expected = vec![
             (
-                // comment to force vertical formatting
                 Instant::from_millis(1),
                 Speed::stopped(),
                 Step::new(3),
@@ -260,6 +250,13 @@ mod tests {
                 Duration::from_millis(1),
             ),
         ];
+        let state = Box::leak(Box::new(State::new()));
+        let encoder_runner = super::EncoderRunner::<30, _>::new(state, sensor);
+        let mut status = state.watch.receiver().unwrap();
+
+        tokio::spawn(mock_runner.run());
+        tokio::spawn(encoder_runner.run(Duration::from_millis(10)));
+        tokio::spawn(advance_embassy_clock());
         for (time, speed, step, time_since_transition) in expected {
             Timer::at(time).await;
             assert_eq!(
