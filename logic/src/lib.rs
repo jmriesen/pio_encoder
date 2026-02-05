@@ -1,7 +1,7 @@
 //! This crate contains all the logic assisted with parsing pio messages and calculating speed.
 //! This crate specificity does **not** depend on embassy-rs.
 //! Depending on embassy-rs would prevent me from running the unit test on my base machine.
-#![cfg_attr(not(test), no_std)]
+//#![cfg_attr(not(test), no_std)]
 #![warn(clippy::pedantic)]
 #![allow(clippy::must_use_candidate)]
 use core::ops::Index;

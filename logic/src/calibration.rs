@@ -141,6 +141,7 @@ async fn calibrate_encoder(state_machine: &impl EncoderStateMachine) -> Calibrat
 
 #[cfg(test)]
 pub mod test {
+    use embassy_futures::select::select;
     use embassy_time::{Duration, Instant};
 
     use crate::{
@@ -148,12 +149,20 @@ pub mod test {
         EncoderStateMachine, Step,
         calibration::sample_phase_lengths,
         measurement::tests::MockPio,
-        mock::{MockSensor, advance_embassy_clock},
+        mock::{MockSensor, advance_embassy_clock, block_on_with_timer},
     };
 
-    #[tokio::test()]
-    async fn balanced_mesurement() {
-        let (sensor, runner) = MockSensor::new(
+    fn simulate(
+        events: ((Step, crate::Direction, Instant), Vec<(Duration, Step)>),
+        assert: impl AsyncFn(MockSensor),
+    ) {
+        let (sensor, mock_runner) = MockSensor::new(events.0, events.1);
+        block_on_with_timer(select(mock_runner.run(), assert(sensor)));
+    }
+
+    #[test]
+    fn balanced_mesurement() {
+        let events = (
             (Step::new(0), CounterClockwise, Instant::from_millis(0)),
             vec![
                 (Duration::from_millis(10), Step::new(1)),
@@ -163,16 +172,16 @@ pub mod test {
                 (Duration::from_millis(10), Step::new(5)),
             ],
         );
-        tokio::spawn(runner.run());
-        tokio::spawn(advance_embassy_clock());
-        assert_eq!(
-            sample_phase_lengths(&sensor).await.0,
-            [10, 10, 10, 10].map(Duration::from_millis)
-        );
+        simulate(events, async |sensor| {
+            assert_eq!(
+                sample_phase_lengths(&sensor).await.0,
+                [10, 10, 10, 10].map(Duration::from_millis)
+            );
+        });
     }
-    #[tokio::test()]
-    async fn balanced_mesurement_clockwise() {
-        let (sensor, runner) = MockSensor::new(
+    #[test]
+    fn balanced_mesurement_clockwise() {
+        let events = (
             (Step::new(0), Clockwise, Instant::from_millis(0)),
             vec![
                 (Duration::from_millis(10), Step::new(-1)),
@@ -182,16 +191,16 @@ pub mod test {
                 (Duration::from_millis(10), Step::new(-5)),
             ],
         );
-        tokio::spawn(runner.run());
-        tokio::spawn(advance_embassy_clock());
-        assert_eq!(
-            sample_phase_lengths(&sensor).await.0,
-            [10, 10, 10, 10].map(Duration::from_millis)
-        );
+        simulate(events, async |sensor| {
+            assert_eq!(
+                sample_phase_lengths(&sensor).await.0,
+                [10, 10, 10, 10].map(Duration::from_millis)
+            );
+        })
     }
-    #[tokio::test]
-    async fn unbalanced_mesurement() {
-        let (sensor, runner) = MockSensor::new(
+    #[test]
+    fn unbalanced_mesurement() {
+        let events = (
             (Step::new(0), CounterClockwise, Instant::from_millis(0)),
             vec![
                 (Duration::from_millis(5), Step::new(1)),
@@ -201,15 +210,15 @@ pub mod test {
             ],
         );
 
-        tokio::spawn(runner.run());
-        tokio::spawn(advance_embassy_clock());
-        assert_eq!(
-            sample_phase_lengths(&sensor).await.0,
-            [5, 10, 20, 5].map(Duration::from_millis)
-        );
+        simulate(events, async |sensor| {
+            assert_eq!(
+                sample_phase_lengths(&sensor).await.0,
+                [5, 10, 20, 5].map(Duration::from_millis)
+            );
+        })
     }
-    async fn run_with_offset(i: i32, expected: [u64; 4]) {
-        let (sensor, runner) = MockSensor::new(
+    fn run_with_offset(i: i32, expected: [u64; 4]) {
+        let events = (
             (Step::new(0 + i), CounterClockwise, Instant::from_millis(0)),
             vec![
                 (Duration::from_millis(1), Step::new(1 + i)),
@@ -218,31 +227,32 @@ pub mod test {
                 (Duration::from_millis(4), Step::new(4 + i)),
             ],
         );
-        tokio::spawn(runner.run());
-        tokio::spawn(advance_embassy_clock());
-        let foo = sample_phase_lengths(&sensor).await.0;
-        assert_eq!(foo, expected.map(Duration::from_millis));
+        simulate(events, async |sensor| {
+            let foo = sample_phase_lengths(&sensor).await.0;
+            assert_eq!(foo, expected.map(Duration::from_millis));
+        })
     }
 
-    #[tokio::test]
-    async fn mesurements_can_start_on_phase_0() {
-        run_with_offset(0, [1, 2, 3, 4]).await;
+    #[test]
+    fn mesurements_can_start_on_phase_0() {
+        run_with_offset(0, [1, 2, 3, 4]);
     }
-    #[tokio::test]
-    async fn mesurements_can_start_on_phase_1() {
-        run_with_offset(1, [2, 3, 4, 1]).await;
+    #[test]
+    fn mesurements_can_start_on_phase_1() {
+        run_with_offset(1, [2, 3, 4, 1]);
     }
-    #[tokio::test]
-    async fn mesurements_can_start_on_phase_2() {
-        run_with_offset(2, [3, 4, 1, 2]).await;
+    #[test]
+    fn mesurements_can_start_on_phase_2() {
+        run_with_offset(2, [3, 4, 1, 2]);
     }
-    #[tokio::test]
-    async fn mesurements_can_start_on_phase_3() {
-        run_with_offset(3, [4, 1, 2, 3]).await;
+    #[test]
+    fn mesurements_can_start_on_phase_3() {
+        run_with_offset(3, [4, 1, 2, 3]);
     }
-    #[tokio::test]
-    async fn exclude_long_time_deltas() {
-        let (sensor, runner) = MockSensor::new(
+
+    #[test]
+    fn exclude_long_time_deltas() {
+        let events = (
             (Step::new(0), CounterClockwise, Instant::from_millis(0)),
             vec![
                 // starting to sample
@@ -257,16 +267,16 @@ pub mod test {
             ],
         );
 
-        tokio::spawn(runner.run());
-        tokio::spawn(advance_embassy_clock());
-        assert_eq!(
-            sample_phase_lengths(&sensor).await.0,
-            [11, 20, 4, 10].map(Duration::from_millis)
-        );
+        simulate(events, async |sensor| {
+            assert_eq!(
+                sample_phase_lengths(&sensor).await.0,
+                [11, 20, 4, 10].map(Duration::from_millis)
+            );
+        })
     }
-    #[tokio::test]
-    async fn exclude_non_adjacent_steps() {
-        let (sensor, runner) = MockSensor::new(
+    #[test]
+    fn exclude_non_adjacent_steps() {
+        let events = (
             (Step::new(0), CounterClockwise, Instant::from_millis(0)),
             vec![
                 (Duration::from_millis(1), Step::new(1)),
@@ -279,16 +289,17 @@ pub mod test {
             ],
         );
 
-        tokio::spawn(runner.run());
-        tokio::spawn(advance_embassy_clock());
-        assert_eq!(
-            sample_phase_lengths(&sensor).await.0,
-            [7, 4, 5, 6,].map(Duration::from_millis)
-        );
+        simulate(events, async |sensor| {
+            assert_eq!(
+                sample_phase_lengths(&sensor).await.0,
+                [7, 4, 5, 6,].map(Duration::from_millis)
+            );
+        })
     }
-    #[tokio::test]
-    async fn jump_forward_momentaraly() {
-        let (sensor, runner) = MockSensor::new(
+
+    #[test]
+    fn jump_forward_momentaraly() {
+        let events = (
             (Step::new(0), CounterClockwise, Instant::from_millis(0)),
             vec![
                 (Duration::from_millis(1), Step::new(1)),
@@ -310,16 +321,17 @@ pub mod test {
             ],
         );
 
-        tokio::spawn(runner.run());
-        tokio::spawn(advance_embassy_clock());
-        assert_eq!(
-            sample_phase_lengths(&sensor).await.0,
-            [5, 6, 7, 8].map(Duration::from_millis)
-        );
+        simulate(events, async |sensor| {
+            assert_eq!(
+                sample_phase_lengths(&sensor).await.0,
+                [5, 6, 7, 8].map(Duration::from_millis)
+            );
+        })
     }
-    #[tokio::test(flavor = "current_thread", start_paused = true)]
-    async fn jump_back_momentaraly() {
-        let (sensor, runner) = MockSensor::new(
+
+    #[test]
+    fn jump_back_momentaraly() {
+        let events = (
             (Step::new(0), CounterClockwise, Instant::from_millis(0)),
             vec![
                 (Duration::from_millis(1), Step::new(1)),
@@ -338,11 +350,11 @@ pub mod test {
             ],
         );
 
-        tokio::spawn(runner.run());
-        tokio::spawn(advance_embassy_clock());
-        assert_eq!(
-            sample_phase_lengths(&sensor).await.0,
-            [1, 2, 3, 4].map(Duration::from_millis)
-        );
+        simulate(events, async |sensor| {
+            assert_eq!(
+                sample_phase_lengths(&sensor).await.0,
+                [1, 2, 3, 4].map(Duration::from_millis)
+            );
+        })
     }
 }

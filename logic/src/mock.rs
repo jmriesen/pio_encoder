@@ -1,5 +1,6 @@
 use std::sync::{Arc, Mutex};
 
+use embassy_futures::select::select;
 use embassy_time::{Duration, Instant, MockDriver, Timer};
 
 use crate::{
@@ -50,10 +51,7 @@ impl MockSensorRunner {
         for (delta_t, step) in self.events {
             event_time += delta_t;
             Timer::at(event_time).await;
-            self.mock
-                .lock()
-                .unwrap()
-                .position_change(dbg!(step), dbg!(event_time));
+            self.mock.lock().unwrap().position_change(step, event_time);
         }
         Timer::after_secs(1).await;
     }
@@ -74,4 +72,20 @@ pub async fn advance_embassy_clock() {
         interval.tick().await;
         driver.advance(embassy_time::Duration::from_micros(10));
     }
+}
+
+/// Blocks on a future untill completion.
+/// Clock is advanced by 10 microseconds every time after every poll.
+pub fn block_on_with_timer(future: impl Future) {
+    embassy_futures::block_on(select(
+        future,
+        //Time updates after everything else
+        async move {
+            let driver = MockDriver::get();
+            loop {
+                driver.advance(embassy_time::Duration::from_micros(10));
+                embassy_futures::yield_now().await;
+            }
+        },
+    ));
 }

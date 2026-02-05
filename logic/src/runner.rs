@@ -89,16 +89,38 @@ mod tests {
     use crate::{
         Direction::CounterClockwise,
         EQUAL_STEPS,
-        measurement::{
-            Measurement,
-            tests::{Event, sequence_events},
-        },
-        mock::{MockSensor, advance_embassy_clock},
-        runner::{EncoderRunner, State, Status},
+        mock::{MockSensor, advance_embassy_clock, block_on_with_timer},
+        runner::{State, Status},
         speed::Speed,
         step::{Step, SubStep},
     };
+    use embassy_futures::{join::join, select::select};
+    use embassy_sync::watch::Receiver;
     use embassy_time::{Duration, Instant, Timer};
+    fn simulate(
+        events: ((Step, crate::Direction, Instant), Vec<(Instant, Step)>),
+        assert: impl AsyncFn(
+            Receiver<
+                'static,
+                embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex,
+                Status,
+                10,
+            >,
+        ),
+    ) {
+        let (sensor, mock_runner) = MockSensor::new_inst(events.0, events.1);
+        let state = Box::leak(Box::new(State::new()));
+        let encoder_runner = super::EncoderRunner::<30, _>::new(state, sensor);
+        let status = state.watch.receiver().unwrap();
+
+        block_on_with_timer(select(
+            join(
+                mock_runner.run(),
+                encoder_runner.run(Duration::from_millis(10)),
+            ),
+            assert(status),
+        ));
+    }
 
     /*
     fn simulate_assert(
@@ -134,59 +156,36 @@ mod tests {
         }
     }
 
+    */
     #[test]
     fn estimate_between_ticks() {
-        let measurements = sequence_events(
+        let events = (
             (Step::new(0), CounterClockwise, Instant::from_millis(0)),
-            vec![
-                // we start off stopped
-                (Instant::from_millis(0), Event::Mesurement),
-                // Start moving
-                (Instant::from_millis(35), Event::Step(3)),
-                // Use real speed
-                (Instant::from_millis(40), Event::Mesurement),
-                // Use keep using last speed estimate.
-                (Instant::from_millis(45), Event::Mesurement),
-                // Using last speed estimate would push position into the next step.
-                // Estimate current speed is the max possible that does not push position into the
-                // next step
-                (Instant::from_millis(50), Event::Mesurement),
-                // Last ms before time out.
-                (Instant::from_millis(64), Event::Mesurement),
-                // Time out and consider the encoder stopped
-                (Instant::from_millis(65), Event::Mesurement),
-            ],
+            vec![(Instant::from_millis(35), Step::new(3))],
         );
-
-        let speeds = vec![
-            Speed::stopped(),
-            Speed::new(SubStep::new(64 * 3), Duration::from_millis(35)),
-            Speed::new(SubStep::new(64 * 3), Duration::from_millis(35)),
-            //Reducing speed estimate since we need to stay in the same tick
-            Speed::new(SubStep::new(64), Duration::from_millis(15)),
-            Speed::new(SubStep::new(64), Duration::from_millis(29)),
-            // Timed out
-            Speed::stopped(),
-        ];
-        let positions = vec![
-            SubStep::new(0),
-            Step::new(3).lower_bound(&EQUAL_STEPS) + speeds[1] * Duration::from_millis(5),
-            Step::new(3).lower_bound(&EQUAL_STEPS) + speeds[2] * Duration::from_millis(10),
-            // Clamp position at the end of the step.
-            Step::new(3).upper_bound(&EQUAL_STEPS) - SubStep::new(1),
-            Step::new(3).upper_bound(&EQUAL_STEPS) - SubStep::new(1),
-            // Revert position back to last known transition once we are stopped.
-            Step::new(3).lower_bound(&EQUAL_STEPS),
-        ];
-        simulate_assert(measurements, speeds, positions);
+        simulate(events, async |mut status| {
+            let speeds = vec![
+                Speed::stopped(),
+                Speed::new(SubStep::new(64 * 3), Duration::from_millis(35)),
+                //Reducing speed estimate since we need to stay in the same tick
+                Speed::new(SubStep::new(64), Duration::from_millis(15)),
+                Speed::new(SubStep::new(64), Duration::from_millis(25)),
+                // Timed out
+                Speed::stopped(),
+            ];
+            //Ignore first 30ms
+            Timer::after_millis(30).await;
+            for speed in speeds {
+                assert_eq!(status.changed().await.speed, speed);
+            }
+        });
     }
-    */
 
     ///This is the example taken from the readme of the code.
     ///(https://github.com/raspberrypi/pico-examples/tree/master/pio/quadrature_encoder_substep)
     #[tokio::test(flavor = "current_thread", start_paused = true)]
     async fn example_from_source_documentation() {
-        let (sensor, mock_runner) = MockSensor::new_inst(
+        let events = (
             (Step::new(3), CounterClockwise, Instant::from_millis(0)),
             vec![
                 (Instant::from_millis(21), Step::new(4)),
@@ -194,45 +193,40 @@ mod tests {
                 (Instant::from_millis(49), Step::new(7)),
             ],
         );
-        let expected = vec![
-            (Speed::stopped(), Step::new(3), Duration::from_millis(0)),
-            (Speed::stopped(), Step::new(3), Duration::from_millis(0)),
-            (
-                Speed::new(SubStep::new(64), Duration::from_millis(21)),
-                Step::new(4),
-                Duration::from_millis(9),
-            ),
-            (
-                Speed::new(SubStep::new(64), Duration::from_millis(13)),
-                Step::new(5),
-                Duration::from_millis(6),
-            ),
-            (
-                Speed::new(SubStep::new(128), Duration::from_millis(15)),
-                Step::new(7),
-                Duration::from_millis(1),
-            ),
-        ];
-        let state = Box::leak(Box::new(State::new()));
-        let encoder_runner = super::EncoderRunner::<30, _>::new(state, sensor);
-        let mut status = state.watch.receiver().unwrap();
-
-        tokio::spawn(mock_runner.run());
-        tokio::spawn(encoder_runner.run(Duration::from_millis(10)));
-        tokio::spawn(advance_embassy_clock());
-        for (speed, step, time_since_transition) in expected {
-            assert_eq!(
-                dbg!(status.changed().await),
-                Status {
-                    speed,
-                    step,
-                    // In this example we are always going counterclockwise so position is based
-                    // off the lower bound
-                    position: step.lower_bound(&EQUAL_STEPS) + speed * time_since_transition,
-                    direction: CounterClockwise
-                }
-            )
-        }
+        simulate(events, async |mut status| {
+            let expected = vec![
+                (Speed::stopped(), Step::new(3), Duration::from_millis(0)),
+                (Speed::stopped(), Step::new(3), Duration::from_millis(0)),
+                (
+                    Speed::new(SubStep::new(64), Duration::from_millis(21)),
+                    Step::new(4),
+                    Duration::from_millis(9),
+                ),
+                (
+                    Speed::new(SubStep::new(64), Duration::from_millis(13)),
+                    Step::new(5),
+                    Duration::from_millis(6),
+                ),
+                (
+                    Speed::new(SubStep::new(128), Duration::from_millis(15)),
+                    Step::new(7),
+                    Duration::from_millis(1),
+                ),
+            ];
+            for (speed, step, time_since_transition) in expected {
+                assert_eq!(
+                    dbg!(status.changed().await),
+                    Status {
+                        speed,
+                        step,
+                        // In this example we are always going counterclockwise so position is based
+                        // off the lower bound
+                        position: step.lower_bound(&EQUAL_STEPS) + speed * time_since_transition,
+                        direction: CounterClockwise
+                    }
+                )
+            }
+        });
     }
 
     /*
