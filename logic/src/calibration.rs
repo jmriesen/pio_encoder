@@ -79,7 +79,6 @@ async fn sample_phase_lengths(state_machine: &impl EncoderStateMachine) -> Phase
         state_machine: &impl EncoderStateMachine,
     ) -> Option<PhaseLengths> {
         let mut ticker = Ticker::every(Duration::from_millis(1));
-        ticker.next().await;
         let inital = state_machine.read();
 
         // sample cycle
@@ -142,62 +141,15 @@ async fn calibrate_encoder(state_machine: &impl EncoderStateMachine) -> Calibrat
 
 #[cfg(test)]
 pub mod test {
-    use std::sync::{Arc, Mutex};
-
-    use embassy_time::{Duration, Instant, Timer};
+    use embassy_time::{Duration, Instant};
 
     use crate::{
         Direction::{self, *},
-        Step,
-        calibration::{EncoderStateMachine, sample_phase_lengths},
+        EncoderStateMachine, Step,
+        calibration::sample_phase_lengths,
         measurement::tests::MockPio,
+        mock::{MockSensor, advance_embassy_clock},
     };
-
-    pub struct MockSensor {
-        mock: Arc<Mutex<MockPio>>,
-    }
-    pub struct MockSensorRunner {
-        mock: Arc<Mutex<MockPio>>,
-        events: Vec<(Duration, Step)>,
-    }
-
-    impl MockSensor {
-        pub fn new(
-            inital_conditions: (Step, Direction, Instant),
-            events: Vec<(Duration, Step)>,
-        ) -> (Self, MockSensorRunner) {
-            let mock = Arc::new(Mutex::new(MockPio::new(
-                inital_conditions.0,
-                inital_conditions.1,
-                inital_conditions.2,
-            )));
-            (
-                MockSensor { mock: mock.clone() },
-                MockSensorRunner { events, mock },
-            )
-        }
-    }
-    impl MockSensorRunner {
-        pub async fn run(self) {
-            let mut event_time = Instant::from_millis(0);
-            for (delta_t, step) in self.events {
-                event_time += delta_t;
-                Timer::at(event_time).await;
-                self.mock.lock().unwrap().position_change(step, event_time);
-            }
-            Timer::after_secs(1).await;
-            panic!("ran out of mesurements");
-        }
-    }
-
-    impl EncoderStateMachine for MockSensor {
-        fn read(&self) -> crate::Measurement {
-            self.mock
-                .lock()
-                .unwrap()
-                .take_mesurement(embassy_time::Instant::now())
-        }
-    }
 
     #[tokio::test()]
     async fn balanced_mesurement() {
@@ -212,6 +164,7 @@ pub mod test {
             ],
         );
         tokio::spawn(runner.run());
+        tokio::spawn(advance_embassy_clock());
         assert_eq!(
             sample_phase_lengths(&sensor).await.0,
             [10, 10, 10, 10].map(Duration::from_millis)
@@ -230,6 +183,7 @@ pub mod test {
             ],
         );
         tokio::spawn(runner.run());
+        tokio::spawn(advance_embassy_clock());
         assert_eq!(
             sample_phase_lengths(&sensor).await.0,
             [10, 10, 10, 10].map(Duration::from_millis)
@@ -248,6 +202,7 @@ pub mod test {
         );
 
         tokio::spawn(runner.run());
+        tokio::spawn(advance_embassy_clock());
         assert_eq!(
             sample_phase_lengths(&sensor).await.0,
             [5, 10, 20, 5].map(Duration::from_millis)
@@ -264,6 +219,7 @@ pub mod test {
             ],
         );
         tokio::spawn(runner.run());
+        tokio::spawn(advance_embassy_clock());
         let foo = sample_phase_lengths(&sensor).await.0;
         assert_eq!(foo, expected.map(Duration::from_millis));
     }
@@ -302,6 +258,7 @@ pub mod test {
         );
 
         tokio::spawn(runner.run());
+        tokio::spawn(advance_embassy_clock());
         assert_eq!(
             sample_phase_lengths(&sensor).await.0,
             [11, 20, 4, 10].map(Duration::from_millis)
@@ -323,6 +280,7 @@ pub mod test {
         );
 
         tokio::spawn(runner.run());
+        tokio::spawn(advance_embassy_clock());
         assert_eq!(
             sample_phase_lengths(&sensor).await.0,
             [7, 4, 5, 6,].map(Duration::from_millis)
@@ -353,12 +311,13 @@ pub mod test {
         );
 
         tokio::spawn(runner.run());
+        tokio::spawn(advance_embassy_clock());
         assert_eq!(
             sample_phase_lengths(&sensor).await.0,
             [5, 6, 7, 8].map(Duration::from_millis)
         );
     }
-    #[tokio::test]
+    #[tokio::test(flavor = "current_thread", start_paused = true)]
     async fn jump_back_momentaraly() {
         let (sensor, runner) = MockSensor::new(
             (Step::new(0), CounterClockwise, Instant::from_millis(0)),
@@ -367,19 +326,20 @@ pub mod test {
                 (Duration::from_millis(2), Step::new(2)),
                 (
                     // Subtracting 2 to compensate for the two jumps
-                    Duration::from_millis(3) - Duration::from_micros(2),
+                    Duration::from_millis(3) - Duration::from_micros(20),
                     Step::new(3),
                 ),
                 //Jump back
-                (Duration::from_micros(1), Step::new(0)),
+                (Duration::from_micros(10), Step::new(0)),
                 // Jump forward (Keep sampling since there is no real way to distinguish current
                 // state from the state right before the jump)
-                (Duration::from_micros(1), Step::new(3)),
+                (Duration::from_micros(10), Step::new(3)),
                 (Duration::from_millis(4), Step::new(4)),
             ],
         );
 
         tokio::spawn(runner.run());
+        tokio::spawn(advance_embassy_clock());
         assert_eq!(
             sample_phase_lengths(&sensor).await.0,
             [1, 2, 3, 4].map(Duration::from_millis)

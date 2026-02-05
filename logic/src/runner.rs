@@ -88,26 +88,19 @@ impl<'s, const IDLE_STOPING_TIME_MS: u64, PIO: EncoderStateMachine>
 mod tests {
     use crate::{
         Direction::CounterClockwise,
-        EQUAL_STEPS, EncoderRunner,
-        calibration::test::MockSensor,
+        EQUAL_STEPS,
         measurement::{
             Measurement,
             tests::{Event, sequence_events},
         },
-        runner::{State, Status},
+        mock::{MockSensor, advance_embassy_clock},
+        runner::{EncoderRunner, State, Status},
         speed::Speed,
         step::{Step, SubStep},
     };
-    use embassy_sync::watch::Watch;
-    use embassy_time::{Duration, Instant, MockDriver, Timer};
-    async fn advance_embassy_clock() {
-        let driver = MockDriver::get();
-        let mut interval = tokio::time::interval(std::time::Duration::from_micros(50));
-        loop {
-            interval.tick().await;
-            driver.advance(embassy_time::Duration::from_micros(50));
-        }
-    }
+    use embassy_time::{Duration, Instant, Timer};
+
+    /*
     fn simulate_assert(
         measurements: Vec<Measurement>,
         speeds: Vec<Speed>,
@@ -217,6 +210,7 @@ mod tests {
 
         simulate_assert(measurements, speeds, positions);
     }
+    */
 
     ///This is the example taken from the readme of the code.
     ///(https://github.com/raspberrypi/pico-examples/tree/master/pio/quadrature_encoder_substep)
@@ -231,12 +225,11 @@ mod tests {
             ],
         );
         let state = Box::leak(Box::new(State::new()));
-
         let encoder_runner = super::EncoderRunner::<30, _>::new(state, sensor);
 
-        tokio::spawn(advance_embassy_clock());
         tokio::spawn(mock_runner.run());
         tokio::spawn(encoder_runner.run(Duration::from_millis(10)));
+        tokio::spawn(advance_embassy_clock());
 
         let mut status = state.watch.receiver().unwrap();
 
@@ -283,6 +276,7 @@ mod tests {
         }
     }
 
+    /*
     #[test]
     fn hovering_over_a_transition_is_not_considered_movement() {
         let measurements = sequence_events(
@@ -362,5 +356,10 @@ mod tests {
             Step::new(10).lower_bound(&EQUAL_STEPS) + speeds[5] * Duration::from_millis(10),
         ];
         simulate_assert(measurements, speeds, positions);
+    }
+    */
+    #[test]
+    fn update_the_remaining_tests() {
+        panic!()
     }
 }
