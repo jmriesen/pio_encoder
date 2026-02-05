@@ -31,6 +31,18 @@ impl MockSensor {
             MockSensorRunner { events, mock },
         )
     }
+    pub fn new_inst(
+        inital_conditions: (Step, Direction, Instant),
+        events_inst: Vec<(Instant, Step)>,
+    ) -> (Self, MockSensorRunner) {
+        let mut current = inital_conditions.2;
+        let mut events = vec![];
+        for (inst, step) in events_inst {
+            events.push((inst.duration_since(current), step));
+            current = inst;
+        }
+        Self::new(inital_conditions, events)
+    }
 }
 impl MockSensorRunner {
     pub async fn run(self) {
@@ -38,7 +50,10 @@ impl MockSensorRunner {
         for (delta_t, step) in self.events {
             event_time += delta_t;
             Timer::at(event_time).await;
-            self.mock.lock().unwrap().position_change(step, event_time);
+            self.mock
+                .lock()
+                .unwrap()
+                .position_change(dbg!(step), dbg!(event_time));
         }
         Timer::after_secs(1).await;
     }

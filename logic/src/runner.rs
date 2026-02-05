@@ -180,71 +180,34 @@ mod tests {
         ];
         simulate_assert(measurements, speeds, positions);
     }
-
-    #[test]
-    fn step_and_mesurement_happen_at_the_same_time() {
-        let measurements = sequence_events(
-            (Step::new(0), CounterClockwise, Instant::from_millis(0)),
-            vec![
-                (Instant::from_millis(0), Event::Mesurement),
-                (Instant::from_millis(10), Event::Step(1)),
-                (Instant::from_millis(10), Event::Mesurement),
-                (Instant::from_millis(20), Event::Step(2)),
-                (Instant::from_millis(20), Event::Mesurement),
-                (Instant::from_millis(30), Event::Step(4)),
-                (Instant::from_millis(30), Event::Mesurement),
-            ],
-        );
-        let speeds = vec![
-            Speed::stopped(),
-            Speed::new(SubStep::new(64), Duration::from_millis(10)),
-            Speed::new(SubStep::new(64), Duration::from_millis(10)),
-            Speed::new(SubStep::new(64 * 2), Duration::from_millis(10)),
-        ];
-        let positions = vec![
-            SubStep::new(0),
-            Step::new(1).lower_bound(&EQUAL_STEPS) + speeds[1] * Duration::from_millis(0),
-            Step::new(2).lower_bound(&EQUAL_STEPS) + speeds[2] * Duration::from_millis(0),
-            Step::new(4).lower_bound(&EQUAL_STEPS) + speeds[2] * Duration::from_millis(0),
-        ];
-
-        simulate_assert(measurements, speeds, positions);
-    }
     */
 
     ///This is the example taken from the readme of the code.
     ///(https://github.com/raspberrypi/pico-examples/tree/master/pio/quadrature_encoder_substep)
     #[tokio::test(flavor = "current_thread", start_paused = true)]
     async fn example_from_source_documentation() {
-        let (sensor, mock_runner) = MockSensor::new(
+        let (sensor, mock_runner) = MockSensor::new_inst(
             (Step::new(3), CounterClockwise, Instant::from_millis(0)),
             vec![
-                (Duration::from_millis(21), Step::new(4)),
-                (Duration::from_millis(13), Step::new(5)),
-                (Duration::from_millis(15), Step::new(7)),
+                (Instant::from_millis(21), Step::new(4)),
+                (Instant::from_millis(34), Step::new(5)),
+                (Instant::from_millis(49), Step::new(7)),
             ],
         );
         let expected = vec![
+            (Speed::stopped(), Step::new(3), Duration::from_millis(0)),
+            (Speed::stopped(), Step::new(3), Duration::from_millis(0)),
             (
-                Instant::from_millis(1),
-                Speed::stopped(),
-                Step::new(3),
-                Duration::from_millis(0),
-            ),
-            (
-                Instant::from_millis(31),
                 Speed::new(SubStep::new(64), Duration::from_millis(21)),
                 Step::new(4),
                 Duration::from_millis(9),
             ),
             (
-                Instant::from_millis(41),
                 Speed::new(SubStep::new(64), Duration::from_millis(13)),
                 Step::new(5),
                 Duration::from_millis(6),
             ),
             (
-                Instant::from_millis(51),
                 Speed::new(SubStep::new(128), Duration::from_millis(15)),
                 Step::new(7),
                 Duration::from_millis(1),
@@ -257,10 +220,9 @@ mod tests {
         tokio::spawn(mock_runner.run());
         tokio::spawn(encoder_runner.run(Duration::from_millis(10)));
         tokio::spawn(advance_embassy_clock());
-        for (time, speed, step, time_since_transition) in expected {
-            Timer::at(time).await;
+        for (speed, step, time_since_transition) in expected {
             assert_eq!(
-                status.get().await,
+                dbg!(status.changed().await),
                 Status {
                     speed,
                     step,
