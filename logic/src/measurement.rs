@@ -125,7 +125,8 @@ fn duration_dif_abs(
 }
 #[cfg(test)]
 pub mod tests {
-    use crate::EQUAL_STEPS;
+
+    use crate::calibration::EQUAL_STEPS;
 
     use super::*;
     use embassy_time::Duration;

@@ -129,7 +129,7 @@ mod tests {
     use std::num::Wrapping;
 
     use super::{Step, SubStep};
-    use crate::EQUAL_STEPS;
+    use crate::calibration::EQUAL_STEPS;
 
     #[test]
     fn check_substep_ranges() {

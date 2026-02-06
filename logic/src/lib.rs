@@ -6,7 +6,6 @@
 #![allow(clippy::must_use_candidate)]
 use core::ops::Index;
 
-use embassy_time::Duration;
 pub mod encodeing;
 mod speed;
 pub use speed::Speed;
@@ -14,15 +13,16 @@ mod measurement;
 pub use encodeing::DirectionDuration;
 pub use measurement::Measurement;
 mod step;
-use crate::calibration::EQUAL_STEPS;
 pub use step::{Step, SubStep};
 mod calibration;
+pub use calibration::EQUAL_STEPS;
 
 #[cfg(test)]
 mod mock;
 mod runner;
+pub use runner::{EncoderRunner, State};
 
-pub trait EncoderStateMachine {
+pub trait EncoderStateMachine: Clone {
     /// Returns whatever data is currently stored in the PIO State Machine.
     /// Since this reflects real world data, repeated calls to read ***CAN RESULT IN Different
     /// VALUES***

@@ -13,7 +13,7 @@ pub const EQUAL_STEPS: CalibrationData = CalibrationData([
     SubStep::new(192),
 ]);
 
-///Max value of PhaseLengths sample data before we have to rescale.
+///Max value of `PhaseLengths` sample data before we have to rescale.
 // Chosen since it is the largest a power of 16 that does not cause an overflow when passed to `normalize`
 const RESCALE_THRESHOLD: Duration = Duration::from_secs(0xF_FF_FF_FF_FF);
 
@@ -26,11 +26,11 @@ struct PhaseLengths([Duration; 4]);
 impl AddAssign for PhaseLengths {
     fn add_assign(&mut self, rhs: Self) {
         for i in 0..self.0.len() {
-            self.0[i] += rhs.0[i]
+            self.0[i] += rhs.0[i];
         }
         if self.inner_sum() > RESCALE_THRESHOLD {
             for entry in &mut self.0 {
-                *entry /= 2
+                *entry /= 2;
             }
         }
     }
@@ -40,7 +40,7 @@ impl PhaseLengths {
     /// Sum of all the phase lengths
     /// Used for resizing and normalizing data.
     fn inner_sum(&self) -> Duration {
-        self.0.iter().cloned().sum::<Duration>()
+        self.0.iter().copied().sum::<Duration>()
     }
 }
 impl From<PhaseLengths> for CalibrationData {
@@ -48,9 +48,9 @@ impl From<PhaseLengths> for CalibrationData {
         const {
             // if `RESCALE_THRESHOLD` does not panic when passed to normalize nothing smaller than
             // it should either. (checking at compile time)
-            assert!(255 == normalize(RESCALE_THRESHOLD, RESCALE_THRESHOLD))
+            assert!(255 == normalize(RESCALE_THRESHOLD, RESCALE_THRESHOLD));
         }
-        ///Scales a duration 0s-total_time into an u8 0-255::Max
+        ///Scales a duration 0s-total_time into an u8 0-255
         const fn normalize(value: Duration, total_time: Duration) -> i32 {
             //Adding half the divisor before divide is a trick to round rather than truncate.
             let half_total = total_time.as_ticks() / 2;
@@ -129,11 +129,11 @@ async fn sample_step_len(
     }
 }
 
-async fn calibrate_encoder(state_machine: &impl EncoderStateMachine) -> CalibrationData {
+pub async fn calibrate_encoder(state_machine: impl EncoderStateMachine) -> CalibrationData {
     let mut running_total = PhaseLengths([Duration::from_millis(0); 4]);
     // Number of samples to take (just a heuristic)
     for _ in 0..32 {
-        let sample = sample_phase_lengths(state_machine).await;
+        let sample = sample_phase_lengths(&state_machine).await;
         running_total += sample;
     }
     running_total.into()

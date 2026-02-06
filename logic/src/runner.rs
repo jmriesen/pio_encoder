@@ -2,10 +2,11 @@
 //! This crate specificity does **not** depend on embassy-rs.
 //! Depending on embassy-rs would prevent me from running the unit test on my base machine.
 use crate::{
-    Direction, EncoderStateMachine, Measurement, Speed, Step, SubStep, calibration::EQUAL_STEPS,
+    Direction, EncoderStateMachine, Measurement, Speed, Step, SubStep,
+    calibration::{EQUAL_STEPS, calibrate_encoder},
 };
 use embassy_sync::{
-    blocking_mutex::raw::{CriticalSectionRawMutex, NoopRawMutex, RawMutex},
+    blocking_mutex::raw::RawMutex,
     watch::{Sender, Watch},
 };
 use embassy_time::{Duration, Ticker};
@@ -22,6 +23,12 @@ struct Status {
 pub struct State<M: RawMutex, const SUB: usize> {
     watch: Watch<M, Status, SUB>,
 }
+impl<M: RawMutex, const SUB: usize> Default for State<M, SUB> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<M: RawMutex, const SUB: usize> State<M, SUB> {
     pub fn new() -> Self {
         Self {
@@ -32,7 +39,6 @@ impl<M: RawMutex, const SUB: usize> State<M, SUB> {
 }
 
 /// Stores all the logical state required for the sub-step encoder.
-///
 pub struct EncoderRunner<
     's,
     const IDLE_STOPING_TIME_MS: u64,
@@ -57,6 +63,15 @@ impl<'s, const IDLE_STOPING_TIME_MS: u64, PIO: EncoderStateMachine, M: RawMutex,
         Duration::from_millis(IDLE_STOPING_TIME_MS)
     }
     pub async fn run(self, update_rate: Duration) -> ! {
+        let foo = self.pio_state.clone();
+        embassy_futures::join::join(
+            self.calculate_speed_and_pos(update_rate),
+            calibrate_encoder(foo),
+        )
+        .await
+        .0
+    }
+    pub async fn calculate_speed_and_pos(self, update_rate: Duration) -> ! {
         let mut ticker = Ticker::every(update_rate);
         let mut last_mesurement = self.pio_state.read();
         let mut speed = Speed::stopped();
@@ -90,7 +105,7 @@ impl<'s, const IDLE_STOPING_TIME_MS: u64, PIO: EncoderStateMachine, M: RawMutex,
 mod tests {
     use crate::{
         Direction::CounterClockwise,
-        EQUAL_STEPS,
+        calibration::EQUAL_STEPS,
         mock::{MockSensor, block_on_with_timer},
         runner::{State, Status},
         speed::Speed,

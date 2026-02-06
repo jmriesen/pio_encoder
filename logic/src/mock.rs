@@ -3,12 +3,9 @@ use std::sync::{Arc, Mutex};
 use embassy_futures::select::select;
 use embassy_time::{Duration, Instant, MockDriver, Timer};
 
-use crate::{
-    Direction::{self, *},
-    EncoderStateMachine, Step,
-    measurement::tests::MockPio,
-};
+use crate::{Direction, EncoderStateMachine, Step, measurement::tests::MockPio};
 
+#[derive(Clone)]
 pub struct MockSensor {
     mock: Arc<Mutex<MockPio>>,
 }
