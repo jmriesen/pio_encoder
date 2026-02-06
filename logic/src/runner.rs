@@ -5,7 +5,7 @@ use crate::{
     Direction, EncoderStateMachine, Measurement, Speed, Step, SubStep, calibration::EQUAL_STEPS,
 };
 use embassy_sync::{
-    blocking_mutex::raw::{CriticalSectionRawMutex, NoopRawMutex},
+    blocking_mutex::raw::{CriticalSectionRawMutex, NoopRawMutex, RawMutex},
     watch::{Sender, Watch},
 };
 use embassy_time::{Duration, Ticker};
@@ -19,12 +19,10 @@ struct Status {
     direction: Direction,
 }
 
-// TODO: make generic over watchers and raw mutex
-/// Resources required for the encoder and runner to talk to each other
-pub struct State {
-    watch: Watch<CriticalSectionRawMutex, Status, 10>,
+pub struct State<M: RawMutex, const SUB: usize> {
+    watch: Watch<M, Status, SUB>,
 }
-impl State {
+impl<M: RawMutex, const SUB: usize> State<M, SUB> {
     pub fn new() -> Self {
         Self {
             //TODO: consider switching to new_with
@@ -35,17 +33,21 @@ impl State {
 
 /// Stores all the logical state required for the sub-step encoder.
 ///
-///NOTE: this intentionally does not rely on `embasy_rp` as that would prevent me from running the unit tests on my host machine.
-///TODO: Make generic over mutex
-pub struct EncoderRunner<'s, const IDLE_STOPING_TIME_MS: u64, PIO: EncoderStateMachine> {
-    status_sink: Sender<'s, CriticalSectionRawMutex, Status, 10>,
+pub struct EncoderRunner<
+    's,
+    const IDLE_STOPING_TIME_MS: u64,
+    PIO: EncoderStateMachine,
+    M: RawMutex,
+    const SUB: usize,
+> {
+    status_sink: Sender<'s, M, Status, SUB>,
     pio_state: PIO,
 }
 
-impl<'s, const IDLE_STOPING_TIME_MS: u64, PIO: EncoderStateMachine>
-    EncoderRunner<'s, IDLE_STOPING_TIME_MS, PIO>
+impl<'s, const IDLE_STOPING_TIME_MS: u64, PIO: EncoderStateMachine, M: RawMutex, const SUB: usize>
+    EncoderRunner<'s, IDLE_STOPING_TIME_MS, PIO, M, SUB>
 {
-    pub fn new(state: &'s State, sensor: PIO) -> Self {
+    pub fn new(state: &'s State<M, SUB>, sensor: PIO) -> Self {
         Self {
             status_sink: state.watch.sender(),
             pio_state: sensor,
@@ -95,22 +97,15 @@ mod tests {
         step::{Step, SubStep},
     };
     use embassy_futures::{join::join, select::select};
-    use embassy_sync::watch::Receiver;
+    use embassy_sync::{blocking_mutex::raw::NoopRawMutex, watch::Receiver};
     use embassy_time::{Duration, Instant, Timer};
     fn simulate(
         events: ((Step, crate::Direction, Instant), Vec<(Instant, Step)>),
-        assert: impl AsyncFn(
-            Receiver<
-                'static,
-                embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex,
-                Status,
-                10,
-            >,
-        ),
+        assert: impl AsyncFn(Receiver<'static, NoopRawMutex, Status, 10>),
     ) {
         let (sensor, mock_runner) = MockSensor::new_inst(events.0, events.1);
         let state = Box::leak(Box::new(State::new()));
-        let encoder_runner = super::EncoderRunner::<30, _>::new(state, sensor);
+        let encoder_runner = super::EncoderRunner::<30, _, NoopRawMutex, 10>::new(state, sensor);
         let status = state.watch.receiver().unwrap();
 
         block_on_with_timer(select(
