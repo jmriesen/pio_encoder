@@ -145,11 +145,10 @@ pub mod test {
     use embassy_time::{Duration, Instant};
 
     use crate::{
-        Direction::{self, *},
-        EncoderStateMachine, Step,
+        Direction::*,
+        Step,
         calibration::sample_phase_lengths,
-        measurement::tests::MockPio,
-        mock::{MockSensor, advance_embassy_clock, block_on_with_timer},
+        mock::{MockSensor, block_on_with_timer},
     };
 
     fn simulate(

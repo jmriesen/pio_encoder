@@ -54,7 +54,7 @@ impl<'s, const IDLE_STOPING_TIME_MS: u64, PIO: EncoderStateMachine>
     pub fn idel_stopping_time() -> Duration {
         Duration::from_millis(IDLE_STOPING_TIME_MS)
     }
-    pub async fn run(self, update_rate: Duration) {
+    pub async fn run(self, update_rate: Duration) -> ! {
         let mut ticker = Ticker::every(update_rate);
         let mut last_mesurement = self.pio_state.read();
         let mut speed = Speed::stopped();
@@ -89,7 +89,7 @@ mod tests {
     use crate::{
         Direction::CounterClockwise,
         EQUAL_STEPS,
-        mock::{MockSensor, advance_embassy_clock, block_on_with_timer},
+        mock::{MockSensor, block_on_with_timer},
         runner::{State, Status},
         speed::Speed,
         step::{Step, SubStep},
@@ -122,41 +122,6 @@ mod tests {
         ));
     }
 
-    /*
-    fn simulate_assert(
-        measurements: Vec<Measurement>,
-        speeds: Vec<Speed>,
-        positions: Vec<SubStep>,
-    ) {
-        // Check that we did not forget to pass anything.
-        assert_eq!(measurements.len(), speeds.len());
-        assert_eq!(measurements.len(), positions.len());
-
-        //Asserts that should be run after every measurement;
-        let asserts = |_measurement: Measurement,
-                       speed: Speed,
-                       position: SubStep,
-                       encoder_state: &EncoderRunner<30>| {
-            assert_eq!(speed, encoder_state.speed());
-            assert_eq!(position, encoder_state.position());
-        };
-
-        let mut measurements_and_expected = measurements
-            .into_iter()
-            .zip(speeds.into_iter())
-            .zip(positions.into_iter());
-
-        let ((inital, speed), position) = measurements_and_expected.next().unwrap();
-        let mut encoder_state = EncoderRunner::<30>::new(dbg!(inital));
-        asserts(inital, speed, position, &encoder_state);
-
-        for ((measurement, speed), position) in measurements_and_expected {
-            encoder_state.update(measurement);
-            asserts(measurement, speed, position, &encoder_state);
-        }
-    }
-
-    */
     #[test]
     fn estimate_between_ticks() {
         let events = (
@@ -183,8 +148,8 @@ mod tests {
 
     ///This is the example taken from the readme of the code.
     ///(https://github.com/raspberrypi/pico-examples/tree/master/pio/quadrature_encoder_substep)
-    #[tokio::test(flavor = "current_thread", start_paused = true)]
-    async fn example_from_source_documentation() {
+    #[test]
+    fn example_from_source_documentation() {
         let events = (
             (Step::new(3), CounterClockwise, Instant::from_millis(0)),
             vec![
@@ -229,90 +194,50 @@ mod tests {
         });
     }
 
-    /*
     #[test]
     fn hovering_over_a_transition_is_not_considered_movement() {
-        let measurements = sequence_events(
+        let events = (
             (Step::new(3), CounterClockwise, Instant::from_millis(0)),
             vec![
-                (Instant::from_millis(0), Event::Mesurement),
-                (Instant::from_millis(10), Event::Step(2)),
-                (Instant::from_millis(20), Event::Mesurement),
-                (Instant::from_millis(30), Event::Step(3)),
-                (Instant::from_millis(40), Event::Mesurement),
-                (Instant::from_millis(50), Event::Step(2)),
-                (Instant::from_millis(60), Event::Mesurement),
+                (Instant::from_millis(10), Step::new(2)),
+                (Instant::from_millis(30), Step::new(3)),
+                (Instant::from_millis(50), Step::new(2)),
             ],
         );
-        let speeds = vec![
-            Speed::stopped(),
-            Speed::stopped(),
-            Speed::stopped(),
-            Speed::stopped(),
-        ];
-        let positions = vec![
-            Step::new(3).lower_bound(&EQUAL_STEPS),
-            Step::new(3).lower_bound(&EQUAL_STEPS),
-            Step::new(3).lower_bound(&EQUAL_STEPS),
-            Step::new(3).lower_bound(&EQUAL_STEPS),
-        ];
-        simulate_assert(measurements, speeds, positions);
+        simulate(events, async |mut status| {
+            for _ in 0..5 {
+                let status = status.changed().await;
+                assert_eq!(
+                    (status.speed, status.position),
+                    (Speed::stopped(), EQUAL_STEPS[3])
+                )
+            }
+        })
     }
+
     #[test]
-    fn always_use_larger_delta_speed_for_estiments() {
-        let measurements = sequence_events(
+    fn use_longer_time_delta() {
+        let events = (
             (Step::new(0), CounterClockwise, Instant::from_millis(0)),
-            vec![
-                // larger delta happens first
-                (Instant::from_millis(035), Event::Mesurement),
-                (Instant::from_millis(050), Event::Step(10)),
-                (Instant::from_millis(060), Event::Mesurement),
-                //---resetting
-                (Instant::from_millis(060), Event::Step(-1)),
-                (Instant::from_millis(100), Event::Step(0)),
-                // larger delta happens after
-                (Instant::from_millis(145), Event::Mesurement),
-                (Instant::from_millis(150), Event::Step(10)),
-                (Instant::from_millis(160), Event::Mesurement),
-                //---resetting
-                (Instant::from_millis(160), Event::Step(-1)),
-                (Instant::from_millis(200), Event::Step(0)),
-                // Same time delta
-                (Instant::from_millis(240), Event::Mesurement),
-                (Instant::from_millis(250), Event::Step(10)),
-                (Instant::from_millis(260), Event::Mesurement),
-            ],
+            // Transition time to now is longer
+            vec![(Instant::from_millis(1), Step::new(1))],
         );
-        let speeds = vec![
-            // Larger delta happens first use speed from the last two steps
-            Speed::stopped(),
-            Speed::new(
-                Step::new(10).lower_bound(&EQUAL_STEPS) - Step::new(0).upper_bound(&EQUAL_STEPS),
-                Duration::from_millis(15),
-            ),
-            // larger delta happens after
-            Speed::stopped(),
-            dbg!(Speed::new(SubStep::new(64), Duration::from_millis(10))),
-            // Same time delta
-            Speed::stopped(),
-            Speed::new(SubStep::new(64), Duration::from_millis(10)),
-        ];
-        let positions = vec![
-            // larger delta happens first
-            Step::new(0).lower_bound(&EQUAL_STEPS),
-            Step::new(10).lower_bound(&EQUAL_STEPS) + speeds[1] * Duration::from_millis(10),
-            // Larger delta happens after
-            Step::new(0).lower_bound(&EQUAL_STEPS),
-            Step::new(10).lower_bound(&EQUAL_STEPS) + speeds[3] * Duration::from_millis(10),
-            // Same time delta
-            Step::new(0).lower_bound(&EQUAL_STEPS),
-            Step::new(10).lower_bound(&EQUAL_STEPS) + speeds[5] * Duration::from_millis(10),
-        ];
-        simulate_assert(measurements, speeds, positions);
-    }
-    */
-    #[test]
-    fn update_the_remaining_tests() {
-        panic!()
+        simulate(events, async |mut status| {
+            assert_eq!(
+                status.changed().await.speed,
+                Speed::new(SubStep::new(64), Duration::from_millis(9))
+            );
+        });
+        let events = (
+            (Step::new(0), CounterClockwise, Instant::from_millis(0)),
+            // Last measurement to transition time is longer
+            vec![(Instant::from_millis(6), Step::new(1))],
+        );
+        simulate(events, async |mut status| {
+            assert_eq!(
+                status.get().await.speed,
+                dbg!(Speed::new(SubStep::new(64), Duration::from_millis(6)))
+            );
+        });
     }
 }

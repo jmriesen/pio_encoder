@@ -47,10 +47,11 @@ impl MockSensor {
 }
 impl MockSensorRunner {
     pub async fn run(self) {
-        let mut event_time = Instant::now();
+        let mut event_time = Instant::from_millis(0);
         for (delta_t, step) in self.events {
             event_time += delta_t;
             Timer::at(event_time).await;
+            dbg!(Instant::now());
             self.mock.lock().unwrap().position_change(step, event_time);
         }
         Timer::after_secs(1).await;
@@ -65,23 +66,16 @@ impl EncoderStateMachine for MockSensor {
             .take_mesurement(embassy_time::Instant::now())
     }
 }
-pub async fn advance_embassy_clock() {
-    let driver = MockDriver::get();
-    let mut interval = tokio::time::interval(std::time::Duration::from_micros(10));
-    loop {
-        interval.tick().await;
-        driver.advance(embassy_time::Duration::from_micros(10));
-    }
-}
 
 /// Blocks on a future untill completion.
 /// Clock is advanced by 10 microseconds every time after every poll.
 pub fn block_on_with_timer(future: impl Future) {
+    let driver = MockDriver::get();
+    driver.reset();
     embassy_futures::block_on(select(
         future,
         //Time updates after everything else
         async move {
-            let driver = MockDriver::get();
             loop {
                 driver.advance(embassy_time::Duration::from_micros(10));
                 embassy_futures::yield_now().await;
