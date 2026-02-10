@@ -1,23 +1,25 @@
 //! This crate contains all the logic assisted with parsing pio messages and calculating speed.
 //! This crate specificity does **not** depend on embassy-rs.
 //! Depending on embassy-rs would prevent me from running the unit test on my base machine.
+use core::cell::Cell;
+
 use crate::{
-    Direction, EncoderStateMachine, Measurement, Speed, Step, SubStep,
-    calibration::{EQUAL_STEPS, calibrate_encoder},
+    CalibrationData, Direction, EncoderStateMachine, Measurement, Speed, Step, SubStep,
+    calibration::{EQUAL_STEPS, PhaseLengths, sample_phase_lengths},
 };
 use embassy_sync::{
     blocking_mutex::raw::RawMutex,
-    watch::{Sender, Watch},
+    watch::{Receiver, Sender, Watch},
 };
 use embassy_time::{Duration, Ticker};
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
-struct Status {
-    speed: Speed,
-    step: Step,
-    position: SubStep,
-    direction: Direction,
+pub struct Status {
+    pub speed: Speed,
+    pub step: Step,
+    pub position: SubStep,
+    pub direction: Direction,
 }
 
 pub struct State<M: RawMutex, const SUB: usize> {
@@ -36,6 +38,9 @@ impl<M: RawMutex, const SUB: usize> State<M, SUB> {
             watch: Watch::new(),
         }
     }
+    pub fn subscribe(&self) -> Option<Receiver<'_, M, Status, SUB>> {
+        self.watch.receiver()
+    }
 }
 
 /// Stores all the logical state required for the sub-step encoder.
@@ -48,6 +53,7 @@ pub struct EncoderRunner<
 > {
     status_sink: Sender<'s, M, Status, SUB>,
     pio_state: PIO,
+    calibration_data: Cell<CalibrationData>,
 }
 
 impl<'s, const IDLE_STOPING_TIME_MS: u64, PIO: EncoderStateMachine, M: RawMutex, const SUB: usize>
@@ -57,21 +63,18 @@ impl<'s, const IDLE_STOPING_TIME_MS: u64, PIO: EncoderStateMachine, M: RawMutex,
         Self {
             status_sink: state.watch.sender(),
             pio_state: sensor,
+            calibration_data: Cell::new(EQUAL_STEPS),
         }
     }
     pub fn idel_stopping_time() -> Duration {
         Duration::from_millis(IDLE_STOPING_TIME_MS)
     }
     pub async fn run(self, update_rate: Duration) -> ! {
-        let foo = self.pio_state.clone();
-        embassy_futures::join::join(
-            self.calculate_speed_and_pos(update_rate),
-            calibrate_encoder(foo),
-        )
-        .await
-        .0
+        embassy_futures::join::join(self.run_status_calc(update_rate), self.run_calibration())
+            .await
+            .0
     }
-    pub async fn calculate_speed_and_pos(self, update_rate: Duration) -> ! {
+    pub async fn run_status_calc(&self, update_rate: Duration) -> ! {
         let mut ticker = Ticker::every(update_rate);
         let mut last_mesurement = self.pio_state.read();
         let mut speed = Speed::stopped();
@@ -86,17 +89,36 @@ impl<'s, const IDLE_STOPING_TIME_MS: u64, PIO: EncoderStateMachine, M: RawMutex,
                     speed,
                     last_mesurement,
                     current_mesurement,
-                    &EQUAL_STEPS,
+                    &self.calibration_data.get(),
                 )
             };
             self.status_sink.send(Status {
                 speed,
                 step: current_mesurement.step,
-                position: current_mesurement.transition(&EQUAL_STEPS)
+                position: current_mesurement.transition(&self.calibration_data.get())
                     + speed * (current_mesurement.time_since_transition()),
                 direction: current_mesurement.direction,
             });
             last_mesurement = current_mesurement;
+        }
+    }
+    pub async fn run_calibration(&self) {
+        let mut running_total = PhaseLengths([Duration::from_millis(0); 4]);
+        //Waiting to apply phase adjustments untill we have a decent sample size.
+        for _ in 0..32 {
+            #[cfg(feature = "defmt")]
+            {
+                defmt::info!("Starting")
+            }
+            running_total += sample_phase_lengths(&self.pio_state).await;
+        }
+        #[cfg(feature = "defmt")]
+        {
+            defmt::info!("config:{}", CalibrationData::from(running_total).0)
+        }
+        loop {
+            self.calibration_data.set(running_total.into());
+            running_total += sample_phase_lengths(&self.pio_state).await;
         }
     }
 }

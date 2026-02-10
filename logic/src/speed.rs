@@ -66,7 +66,6 @@ impl Speed {
         Speed(i32::MIN)
     }
 }
-
 impl Mul<Duration> for Speed {
     type Output = SubStep;
 

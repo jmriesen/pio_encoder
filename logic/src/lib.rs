@@ -1,7 +1,7 @@
 //! This crate contains all the logic assisted with parsing pio messages and calculating speed.
 //! This crate specificity does **not** depend on embassy-rs.
 //! Depending on embassy-rs would prevent me from running the unit test on my base machine.
-//#![cfg_attr(not(test), no_std)]
+#![cfg_attr(not(test), no_std)]
 #![warn(clippy::pedantic)]
 #![allow(clippy::must_use_candidate)]
 use core::ops::Index;
@@ -22,7 +22,7 @@ mod mock;
 mod runner;
 pub use runner::{EncoderRunner, State};
 
-pub trait EncoderStateMachine: Clone {
+pub trait EncoderStateMachine {
     /// Returns whatever data is currently stored in the PIO State Machine.
     /// Since this reflects real world data, repeated calls to read ***CAN RESULT IN Different
     /// VALUES***
@@ -47,6 +47,7 @@ pub enum Direction {
     CounterClockwise,
 }
 impl Direction {
+    #[must_use]
     pub fn invert(&self) -> Self {
         match self {
             Direction::Clockwise => Direction::CounterClockwise,

@@ -17,3 +17,4 @@ cortex-m-rt = "0.7.0"
 pio_speed_encoder = { path="../../pio_speed_encoder/" ,features = ["rp2040"]}
 pid = "4.0.0"
 embassy-futures = "0.1.2"
+embassy-sync = "0.7.2"

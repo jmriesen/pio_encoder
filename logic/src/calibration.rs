@@ -21,7 +21,7 @@ const RESCALE_THRESHOLD: Duration = Duration::from_secs(0xF_FF_FF_FF_FF);
 // Index 0 represents the length of ticks 0,4,8... index 1 ticks 1,5,7 ext.
 // Absolute values of each index is not meaningful, but their relative magnitudes is.
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
-struct PhaseLengths([Duration; 4]);
+pub struct PhaseLengths(pub [Duration; 4]);
 
 impl AddAssign for PhaseLengths {
     fn add_assign(&mut self, rhs: Self) {
@@ -45,11 +45,6 @@ impl PhaseLengths {
 }
 impl From<PhaseLengths> for CalibrationData {
     fn from(phase_data: PhaseLengths) -> CalibrationData {
-        const {
-            // if `RESCALE_THRESHOLD` does not panic when passed to normalize nothing smaller than
-            // it should either. (checking at compile time)
-            assert!(255 == normalize(RESCALE_THRESHOLD, RESCALE_THRESHOLD));
-        }
         ///Scales a duration 0s-total_time into an u8 0-255
         const fn normalize(value: Duration, total_time: Duration) -> i32 {
             //Adding half the divisor before divide is a trick to round rather than truncate.
@@ -57,6 +52,11 @@ impl From<PhaseLengths> for CalibrationData {
             let numerator = u8::MAX as u64 * value.as_ticks() + half_total;
             let normalized_value = numerator / total_time.as_ticks();
             normalized_value as i32
+        }
+        const {
+            // if `RESCALE_THRESHOLD` does not panic when passed to normalize nothing smaller than
+            // it should either. (checking at compile time)
+            assert!(255 == normalize(RESCALE_THRESHOLD, RESCALE_THRESHOLD));
         }
         let calibration_data = [
             //The first phase definitionally starts immediately,
@@ -74,7 +74,7 @@ impl From<PhaseLengths> for CalibrationData {
 }
 
 /// Repeatedly attempt to sample data until we have a duration for each step of a cycle.
-async fn sample_phase_lengths(state_machine: &impl EncoderStateMachine) -> PhaseLengths {
+pub async fn sample_phase_lengths(state_machine: &impl EncoderStateMachine) -> PhaseLengths {
     async fn try_sample_phase_lengths(
         state_machine: &impl EncoderStateMachine,
     ) -> Option<PhaseLengths> {
@@ -108,13 +108,13 @@ async fn sample_step_len(
         ticker.next().await;
         let next = state_machine.read();
         match next.step.raw() - current.step.raw() {
+            0 => { /* Continue */ }
             1 if current.direction == Direction::CounterClockwise => {
                 break Some(next);
             }
             -1 if current.direction == Direction::Clockwise => {
                 break Some(next);
             }
-            0 => continue,
             _ => break None,
         }
     }?;
@@ -127,16 +127,6 @@ async fn sample_step_len(
     } else {
         Some((delta_t, next_step))
     }
-}
-
-pub async fn calibrate_encoder(state_machine: impl EncoderStateMachine) -> CalibrationData {
-    let mut running_total = PhaseLengths([Duration::from_millis(0); 4]);
-    // Number of samples to take (just a heuristic)
-    for _ in 0..32 {
-        let sample = sample_phase_lengths(&state_machine).await;
-        running_total += sample;
-    }
-    running_total.into()
 }
 
 #[cfg(test)]
