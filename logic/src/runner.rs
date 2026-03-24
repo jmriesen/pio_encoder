@@ -106,15 +106,7 @@ impl<'s, const IDLE_STOPING_TIME_MS: u64, PIO: EncoderStateMachine, M: RawMutex,
         let mut running_total = PhaseLengths([Duration::from_millis(0); 4]);
         //Waiting to apply phase adjustments untill we have a decent sample size.
         for _ in 0..32 {
-            #[cfg(feature = "defmt")]
-            {
-                defmt::info!("Starting")
-            }
             running_total += sample_phase_lengths(&self.pio_state).await;
-        }
-        #[cfg(feature = "defmt")]
-        {
-            defmt::info!("config:{}", CalibrationData::from(running_total).0)
         }
         loop {
             self.calibration_data.set(running_total.into());
@@ -212,7 +204,7 @@ mod tests {
             ];
             for (speed, step, time_since_transition) in expected {
                 assert_eq!(
-                    dbg!(status.changed().await),
+                    status.changed().await,
                     Status {
                         speed,
                         step,
@@ -249,6 +241,10 @@ mod tests {
 
     #[test]
     fn use_longer_time_delta() {
+        // | Time |  Event  | Note
+        // |  0ms | step 0  | init
+        // |  1ms | step 1  | delta between steps 1ms
+        // | 10ms | reading | delta of 9ms from last transition
         let events = (
             (Step::new(0), CounterClockwise, Instant::from_millis(0)),
             // Transition time to now is longer
@@ -260,6 +256,10 @@ mod tests {
                 Speed::new(SubStep::new(64), Duration::from_millis(9))
             );
         });
+        // | Time |  Event  | Note
+        // |  0ms | step 0  | init
+        // |  6ms | step 1  | delta between steps 6ms
+        // | 10ms | reading | delta now to last step 4ms
         let events = (
             (Step::new(0), CounterClockwise, Instant::from_millis(0)),
             // Last measurement to transition time is longer
@@ -268,7 +268,7 @@ mod tests {
         simulate(events, async |mut status| {
             assert_eq!(
                 status.get().await.speed,
-                dbg!(Speed::new(SubStep::new(64), Duration::from_millis(6)))
+                Speed::new(SubStep::new(64), Duration::from_millis(6))
             );
         });
     }
