@@ -99,16 +99,19 @@ pub async fn sample_phase_lengths(state_machine: &impl EncoderStateMachine) -> P
     }
 }
 
+/// Attempts to measure the duration of the current step.
+/// Returns none if duration could not be determined (state changed by more than 1 tick)
+/// or the step took to long to be useful.
 async fn sample_step_len(
     state_machine: &impl EncoderStateMachine,
-    ticker: &mut Ticker,
+    poll_frequency: &mut Ticker,
     current: Measurement,
 ) -> Option<(Duration, Measurement)> {
     let next_step = loop {
-        ticker.next().await;
+        poll_frequency.next().await;
         let next = state_machine.read();
         match next.step.raw() - current.step.raw() {
-            0 => { /* Continue */ }
+            0 => { /* Continue no transition happened*/ }
             1 if current.direction == Direction::CounterClockwise => {
                 break Some(next);
             }
@@ -297,12 +300,13 @@ pub mod test {
                     Duration::from_millis(3) - Duration::from_micros(10),
                     Step::new(3),
                 ),
-                //Jump forward
+                // Jump forward
                 (Duration::from_micros(1), Step::new(10)),
-                //Jump back
+                // Jump back
                 (Duration::from_micros(1), Step::new(3)),
-                //Resume
+                // Resume (discarded due to direction change)
                 (Duration::from_millis(4), Step::new(4)),
+                // Usable mesurement
                 (Duration::from_millis(5), Step::new(5)),
                 (Duration::from_millis(6), Step::new(6)),
                 (Duration::from_millis(7), Step::new(7)),
@@ -330,10 +334,11 @@ pub mod test {
                     Duration::from_millis(3) - Duration::from_micros(20),
                     Step::new(3),
                 ),
-                //Jump back
+                // Jump back
                 (Duration::from_micros(10), Step::new(0)),
-                // Jump forward (Keep sampling since there is no real way to distinguish current
-                // state from the state right before the jump)
+                // Jump forward
+                // Note after jumping back our direction is still Counterclockwise so their is no
+                // way to detect that a jump even happened.
                 (Duration::from_micros(10), Step::new(3)),
                 (Duration::from_millis(4), Step::new(4)),
             ],
