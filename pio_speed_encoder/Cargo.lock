@@ -835,6 +835,8 @@ name = "pio_speed_encoder_logic"
 version = "0.1.0"
 dependencies = [
  "defmt 1.0.1",
+ "embassy-futures",
+ "embassy-sync",
  "embassy-time",
  "mutants",
 ]

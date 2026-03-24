@@ -8,12 +8,15 @@ const LOOP_DURATION: u32 = 13;
 
 /// Contains the direction of the last encoder tick and how long ago that happened.
 ///
+///
 /// This encoding works by splitting the i32 in half.
 /// - Counterclockwise range = [0, `i32::MIN`)
 /// - Clockwise range = [`i32::MIN`,0)
+///
 /// When a tick is register the counter is reset to the top of its respective range (Clockwise or
 /// Counterclockwise)
 /// After every subsequent loop if a step was not detected we decrement the counter.
+///
 ///
 /// NOTE: the cycles counter **can** overflow (i32 are not infinite).
 /// In that case the direction will flip and the duration will reset to zero.

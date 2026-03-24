@@ -2,14 +2,16 @@
 #![no_main]
 use defmt::*;
 use embassy_executor::Spawner;
+use embassy_futures::join::join;
 use embassy_rp::{
     bind_interrupts,
     peripherals::PIO0,
     pio::{InterruptHandler, Pio},
 };
-use embassy_time::Timer;
-use pio_speed_encoder::Encoder;
-use pio_speed_encoder::substep_version::{PioEncoder, PioEncoderProgram};
+use embassy_sync::blocking_mutex::raw::NoopRawMutex;
+use embassy_time::Duration;
+use pio_speed_encoder::{EncoderRunner, substep_version::EncoderStateMachine};
+use pio_speed_encoder::{State, substep_version::PioEncoderProgram};
 use {defmt_rtt as _, panic_probe as _};
 
 bind_interrupts!(struct Irqs {
@@ -26,12 +28,17 @@ async fn main(_spawner: Spawner) {
     } = Pio::new(pio, Irqs);
 
     let prg = PioEncoderProgram::new(&mut common);
-    let mut encoder = PioEncoder::<_, 0, 30>::new(&mut common, sm0, p.PIN_16, p.PIN_17, &prg);
+    let sm = EncoderStateMachine::new(&mut common, sm0, p.PIN_16, p.PIN_17, &prg);
+    let state = State::<NoopRawMutex, 1>::new();
+    let runner = EncoderRunner::<30, _, _, 1>::new(&state, sm);
 
-    loop {
-        encoder.update();
-        Timer::after_millis(10).await;
-        info!("speed{}", encoder.speed());
-        info!("sub steps:{}", encoder.position());
-    }
+    join(runner.run(Duration::from_millis(10)), async {
+        let mut encoder = state.subscribe().unwrap();
+        loop {
+            let status = encoder.changed().await;
+            info!("speed{}", status.speed);
+            info!("sub steps:{}", status.position);
+        }
+    })
+    .await;
 }

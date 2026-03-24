@@ -66,7 +66,6 @@ impl Speed {
         Speed(i32::MIN)
     }
 }
-
 impl Mul<Duration> for Speed {
     type Output = SubStep;
 
@@ -82,7 +81,7 @@ impl Mul<Duration> for Speed {
 #[cfg(test)]
 mod test {
     use super::Speed;
-    use crate::{EQUAL_STEPS, Step, step::SubStep};
+    use crate::step::SubStep;
     use embassy_time::Duration;
 
     #[test]

@@ -76,7 +76,7 @@ impl Measurement {
     pub fn calculate_speed_bounds(
         previous: Measurement,
         current: Measurement,
-        cali: &[u8; 4],
+        cali: &CalibrationData,
     ) -> Range<Speed> {
         let transition_point = current.transition(cali);
         // Insure duration is always positive.
@@ -106,7 +106,7 @@ impl Measurement {
         last_known_speed: Speed,
         previous: Measurement,
         current: Measurement,
-        cali: &[u8; 4],
+        cali: &CalibrationData,
     ) -> Speed {
         let speed_bounds = Measurement::calculate_speed_bounds(previous, current, cali);
         Measurement::calculate_speed(previous, current, cali)
@@ -125,7 +125,8 @@ fn duration_dif_abs(
 }
 #[cfg(test)]
 pub mod tests {
-    use crate::EQUAL_STEPS;
+
+    use crate::calibration::EQUAL_STEPS;
 
     use super::*;
     use embassy_time::Duration;
