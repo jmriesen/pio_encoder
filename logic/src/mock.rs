@@ -48,7 +48,7 @@ impl MockSensorRunner {
         for (delta_t, step) in self.events {
             event_time += delta_t;
             Timer::at(event_time).await;
-            dbg!(Instant::now());
+            Instant::now();
             self.mock.lock().unwrap().position_change(step, event_time);
         }
         Timer::after_secs(1).await;
@@ -64,6 +64,14 @@ impl EncoderStateMachine for MockSensor {
     }
 }
 
+#[test]
+fn must_be_run_with_nextest() {
+    if std::env::var("NEXTEST").is_err() {
+        panic!(
+            "Due to constrains emposed by a gloable timer the tests need process level isolation ie run with nextest"
+        );
+    }
+}
 /// Blocks on a future untill completion.
 /// Clock is advanced by 10 microseconds every time after every poll.
 pub fn block_on_with_timer(future: impl Future) {
