@@ -29,7 +29,7 @@ pub trait EncoderStateMachine {
     fn read(&self) -> Measurement;
 }
 
-//Calibration data is really a mapping from phase to subsets
+//Calibration data is really a mapping from phase to `SubStep`
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub struct CalibrationData([SubStep; 4]);
 impl Index<usize> for CalibrationData {
