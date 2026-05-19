@@ -18,10 +18,10 @@ pub const EQUAL_STEPS: CalibrationData = CalibrationData([
 const RESCALE_THRESHOLD: Duration = Duration::from_secs(0xF_FF_FF_FF_FF);
 
 /// Represents a measure of how long each phase takes.
-// Index 0 represents the length of ticks 0,4,8... index 1 ticks 1,5,7 ext.
-// Absolute values of each index is not meaningful, but their relative magnitudes is.
+/// Index 0 represents the length of ticks 0,4,8... index 1 ticks 1,5,7 ext.
+/// Absolute values of each index is not meaningful, but their relative magnitudes is.
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
-pub struct PhaseLengths(pub [Duration; 4]);
+pub struct PhaseLengths([Duration; 4]);
 
 impl AddAssign for PhaseLengths {
     fn add_assign(&mut self, rhs: Self) {
@@ -37,6 +37,12 @@ impl AddAssign for PhaseLengths {
 }
 
 impl PhaseLengths {
+    /// NOTE: created with a small, even distribution.
+    /// Intentionally avoiding all 0 durations since that could cause divide by zero errors
+    /// during type conversation.
+    pub fn new() -> Self {
+        Self([Duration::from_ticks(1); 4])
+    }
     /// Sum of all the phase lengths
     /// Used for resizing and normalizing data.
     fn inner_sum(&self) -> Duration {
@@ -139,7 +145,7 @@ pub mod test {
 
     use crate::{
         Direction::*,
-        Step,
+        Step, SubStep,
         calibration::sample_phase_lengths,
         mock::{MockSensor, block_on_with_timer},
     };
@@ -350,5 +356,14 @@ pub mod test {
                 [1, 2, 3, 4].map(Duration::from_millis)
             );
         })
+    }
+    #[test]
+    fn new() {
+        //Testing that a new phase length can be converted without crashing
+        let mut expected = super::EQUAL_STEPS;
+        // Rounding error means we are 1 `SubStep` off "Perfect".
+        // This is close enough.
+        expected.0[3] = expected.0[3] - SubStep::new(1);
+        assert_eq!(expected, super::PhaseLengths::new().into());
     }
 }

@@ -103,7 +103,7 @@ impl<'s, const IDLE_STOPING_TIME_MS: u64, PIO: EncoderStateMachine, M: RawMutex,
         }
     }
     pub async fn run_calibration(&self) {
-        let mut running_total = PhaseLengths([Duration::from_millis(0); 4]);
+        let mut running_total = PhaseLengths::new();
         //Waiting to apply phase adjustments untill we have a decent sample size.
         for _ in 0..32 {
             running_total += sample_phase_lengths(&self.pio_state).await;
