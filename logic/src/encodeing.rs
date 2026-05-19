@@ -27,7 +27,6 @@ const LOOP_DURATION: u32 = 13;
 /// The caller of the crate is responsible for repeatedly calling the update function,
 /// (10hz at least)
 /// so we will always be in a stopped state before an overflow could occur.
-/// Represents the encoders current direction and how many PIO loop has run since the last step.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct DirectionDuration(pub i32);
 
@@ -81,14 +80,10 @@ mod tests {
         assert_eq!(loop_count_start(Direction::Clockwise), i32::MIN);
     }
 
-    /// Due to how the encoding is defined cycles is always a nonzero value.
+    /// The encoding defines that cycles is always nonzero.
+    /// (The first thing the PIO code does after setting the register to the start value is
+    /// subtract 1.)
     /// Attempting to construct a DirectionDuration with zero cycle results in an underflow.
-    ///
-    /// The first thing the PIO code does after setting the register to the start value is
-    /// subtract 1. So the PIO code will never return a zero cycles.
-    /// (It may overflow the number of cycles which will flip the direction and restart the cycle
-    /// count)
-    ///
     #[test]
     fn zero_cycles_underflow() {
         for direction in [Direction::Clockwise, Direction::CounterClockwise] {
