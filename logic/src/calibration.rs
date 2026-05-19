@@ -38,7 +38,8 @@ impl AddAssign for PhaseLengths {
 
 impl PhaseLengths {
     /// NOTE: created with a small, even distribution.
-    /// Intentionally avoiding all 0 durations since that could cause divide by zero errors
+    ///
+    /// Intentionally avoiding 0 durations since they can cause divide by zero errors
     /// during type conversation.
     pub fn new() -> Self {
         Self([Duration::from_ticks(1); 4])
@@ -51,7 +52,7 @@ impl PhaseLengths {
 }
 impl From<PhaseLengths> for CalibrationData {
     fn from(phase_data: PhaseLengths) -> CalibrationData {
-        ///Scales a duration 0s-total_time into an u8 0-255
+        /// Scales a duration from 0s-total_time into an u8 0-255
         const fn normalize(value: Duration, total_time: Duration) -> i32 {
             //Adding half the divisor before divide is a trick to round rather than truncate.
             let half_total = total_time.as_ticks() / 2;
@@ -81,28 +82,31 @@ impl From<PhaseLengths> for CalibrationData {
 
 /// Repeatedly attempt to sample data until we have a duration for each step of a cycle.
 pub async fn sample_phase_lengths(state_machine: &impl EncoderStateMachine) -> PhaseLengths {
-    async fn try_sample_phase_lengths(
-        state_machine: &impl EncoderStateMachine,
-    ) -> Option<PhaseLengths> {
-        let mut ticker = Ticker::every(Duration::from_millis(1));
-        let inital = state_machine.read();
-
-        // sample cycle
-        let (delta_0, current) = sample_step_len(state_machine, &mut ticker, inital).await?;
-        let (delta_1, currnet) = sample_step_len(state_machine, &mut ticker, current).await?;
-        let (delta_2, current) = sample_step_len(state_machine, &mut ticker, currnet).await?;
-        let (delta_3, _) = sample_step_len(state_machine, &mut ticker, current).await?;
-
-        // Adjust to for starting phase
-        let mut deltas = [delta_0, delta_1, delta_2, delta_3];
-        deltas.rotate_left(inital.step.phase());
-        Some(PhaseLengths(deltas))
-    }
     loop {
         if let Some(mesurement) = try_sample_phase_lengths(state_machine).await {
             break mesurement;
         }
     }
+}
+
+/// Attempts to sample 4 continuous step transitions.
+/// Returns None if it could not.
+async fn try_sample_phase_lengths(
+    state_machine: &impl EncoderStateMachine,
+) -> Option<PhaseLengths> {
+    let mut ticker = Ticker::every(Duration::from_millis(1));
+    let inital = state_machine.read();
+
+    // sample cycle
+    let (delta_0, current) = sample_step_len(state_machine, &mut ticker, inital).await?;
+    let (delta_1, currnet) = sample_step_len(state_machine, &mut ticker, current).await?;
+    let (delta_2, current) = sample_step_len(state_machine, &mut ticker, currnet).await?;
+    let (delta_3, _) = sample_step_len(state_machine, &mut ticker, current).await?;
+
+    // Adjust to for starting phase
+    let mut deltas = [delta_0, delta_1, delta_2, delta_3];
+    deltas.rotate_left(inital.step.phase());
+    Some(PhaseLengths(deltas))
 }
 
 /// Attempts to measure the duration of the current step.
@@ -117,16 +121,22 @@ async fn sample_step_len(
         poll_frequency.next().await;
         let next = state_machine.read();
         match next.step.raw() - current.step.raw() {
-            0 => { /* Continue no transition happened*/ }
+            0 => {
+                /* No transition happened*/
+                continue;
+            }
             1 if current.direction == Direction::CounterClockwise => {
-                break Some(next);
+                break next;
             }
             -1 if current.direction == Direction::Clockwise => {
-                break Some(next);
+                break next;
             }
-            _ => break None,
+            _ => {
+                /* Multiple transitions happened mesurement failed */
+                return None;
+            }
         }
-    }?;
+    };
 
     let delta_t = next_step.step_instant - current.step_instant;
     let changed_direction = current.direction != next_step.direction;
@@ -150,6 +160,7 @@ pub mod test {
         mock::{MockSensor, block_on_with_timer},
     };
 
+    /// Takes an inital state, and Vec<(time deltas, absolute step position)>
     fn simulate(
         events: ((Step, crate::Direction, Instant), Vec<(Duration, Step)>),
         assert: impl AsyncFn(MockSensor),
@@ -336,14 +347,14 @@ pub mod test {
                 (Duration::from_millis(1), Step::new(1)),
                 (Duration::from_millis(2), Step::new(2)),
                 (
-                    // Subtracting 2 to compensate for the two jumps
+                    // Subtracting 20 to compensate for the two jumps
                     Duration::from_millis(3) - Duration::from_micros(20),
                     Step::new(3),
                 ),
                 // Jump back
                 (Duration::from_micros(10), Step::new(0)),
                 // Jump forward
-                // Note after jumping back our direction is still Counterclockwise so their is no
+                // Note after jumping back our direction is still Counterclockwise so there is no
                 // way to detect that a jump even happened.
                 (Duration::from_micros(10), Step::new(3)),
                 (Duration::from_millis(4), Step::new(4)),
@@ -359,7 +370,7 @@ pub mod test {
     }
     #[test]
     fn new() {
-        //Testing that a new phase length can be converted without crashing
+        // Testing that a new phase length can be converted without crashing
         let mut expected = super::EQUAL_STEPS;
         // Rounding error means we are 1 `SubStep` off "Perfect".
         // This is close enough.
