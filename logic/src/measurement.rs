@@ -171,7 +171,7 @@ pub mod tests {
         Step(i32),
         Mesurement,
     }
-    /// Takes a sequence of measurement/hardware events and converts them into mesurements the pio
+    /// Takes a sequence of events + timestamps and converts them into mesurements the pio
     /// state machine would generate.
     pub fn sequence_events(
         inital_conditions: (Step, Direction, Instant),
@@ -227,9 +227,7 @@ pub mod tests {
                 (Step::new(5), Direction::Clockwise, Instant::from_millis(0)),
                 vec![
                     (step_time - larger_delta, Event::Mesurement),
-                    //Larger delta time.
                     (step_time, Event::Step(15)),
-                    //Smaller delta time.
                     (step_time + smaller_delta, Event::Mesurement),
                 ],
             );
@@ -251,9 +249,7 @@ pub mod tests {
                 (Step::new(5), Direction::Clockwise, Instant::from_millis(0)),
                 vec![
                     (step_time - smaller_delta, Event::Mesurement),
-                    //Larger delta time.
                     (step_time, Event::Step(15)),
-                    //Smaller delta time.
                     (step_time + larger_delta, Event::Mesurement),
                 ],
             );
