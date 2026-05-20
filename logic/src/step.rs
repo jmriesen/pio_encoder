@@ -5,30 +5,12 @@ use core::{
 };
 ///An encoder step. (4 steps per encoder cycle)
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct Step(Wrapping<u32>);
 /// 4 `Step` = 1 cycle = 255 `SubStep`s.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct SubStep(Wrapping<u32>);
-
-#[cfg(feature = "defmt")]
-/// NOTE: I have created a pull request for wrapping to impl defmt::format.
-/// It should be present in the next defmt release.
-/// If so this impl can be defeated
-mod defmt_impl {
-    use super::*;
-    #[mutants::skip]
-    impl defmt::Format for Step {
-        fn format(&self, fmt: defmt::Formatter) {
-            self.0.0.format(fmt);
-        }
-    }
-    #[mutants::skip]
-    impl defmt::Format for SubStep {
-        fn format(&self, fmt: defmt::Formatter) {
-            self.0.0.format(fmt);
-        }
-    }
-}
 
 impl Step {
     pub fn new(step: i32) -> Self {
