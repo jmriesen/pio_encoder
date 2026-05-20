@@ -13,7 +13,7 @@ mod measurement;
 pub use encodeing::DirectionDuration;
 pub use measurement::Measurement;
 mod step;
-pub use step::{Step, SubStep};
+pub use step::{MAX_STEP, MAX_SUB_STEP, MIN_STEP, MIN_SUB_STEP, Step, SubStep};
 mod calibration;
 pub use calibration::EQUAL_STEPS;
 

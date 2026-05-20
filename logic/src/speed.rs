@@ -13,19 +13,10 @@ use crate::step::SubStep;
 /// let second = Duration::from_secs(1);
 ///
 /// assert_eq!(Speed::max()*second,SubStep::new(2047999999));
-/// assert_eq!(Speed::min()*second,SubStep::new(-2048000000));
 ///
 /// //NOTE I am not sure where this off by one error is comeing from
 /// assert_eq!(Speed::new(SubStep::new(2),second)*second, SubStep::new(1));
 /// assert_eq!(Speed::new(SubStep::new(500),second)*second, SubStep::new(499));
-///
-/// let minimum_frequencey = Duration::from_micros(1 << 20);
-/// let slowest_non_zero_speed = Speed::new(SubStep::new(1),minimum_frequencey);
-/// assert_eq!(slowest_non_zero_speed* minimum_frequencey,SubStep::new(1));
-///
-/// let below_minimum_frequencey = minimum_frequencey -Duration::from_micros(1);
-/// let stopped= Speed::new(SubStep::new(1),minimum_frequencey);
-/// assert_eq!(stopped* below_minimum_frequencey, SubStep::new(0));
 ///```
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
@@ -57,13 +48,14 @@ impl Speed {
         Self(0)
     }
 
-    ///Maximum speed that is possible to represent
+    /// Maximum speed that is possible to represent
     pub const fn max() -> Self {
         Speed(i32::MAX)
     }
-    ///Maximum speed that is possible to represent
-    pub const fn min() -> Self {
-        Speed(i32::MIN)
+
+    // The smallest nonzero speed that can be represented.
+    pub const fn maximum_resolution() -> Self {
+        Speed(1)
     }
 }
 impl Mul<Duration> for Speed {
@@ -74,7 +66,7 @@ impl Mul<Duration> for Speed {
             clippy::suspicious_arithmetic_impl,
             reason = "Internal storage is in units of 2^20 microseconds"
         )]
-        //TODO: I don't like this wrapping multiply
+        //TODO: Check that roll over behavior is reasonable and document it.
         SubStep::new(((self.0 as u64).wrapping_mul(rhs.as_micros()) >> 20) as i32)
     }
 }

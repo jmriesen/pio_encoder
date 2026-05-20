@@ -3,17 +3,31 @@ use core::{
     num::Wrapping,
     ops::{Add, Range, Sub},
 };
-///An encoder step. (4 steps per encoder cycle)
+
+pub const MAX_STEP: Step = Step::new(i32::MAX);
+pub const MIN_STEP: Step = Step::new(i32::MIN);
+
+pub const MAX_SUB_STEP: SubStep = SubStep::new(i32::MAX);
+pub const MIN_SUB_STEP: SubStep = SubStep::new(i32::MIN);
+/// An encoder step. (4 steps per encoder cycle)
+///
+/// NOTE: This value does experience wrapping.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct Step(Wrapping<u32>);
 /// 4 `Step` = 1 cycle = 255 `SubStep`s.
+///
+/// NOTE: This value does experience wrapping.
+/// ```
+/// use pio_speed_encoder_logic::{SubStep,MAX_SUB_STEP,MIN_SUB_STEP};
+/// assert_eq!(MAX_SUB_STEP + SubStep::new(1), MIN_SUB_STEP);
+/// ```
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct SubStep(Wrapping<u32>);
 
 impl Step {
-    pub fn new(step: i32) -> Self {
+    pub const fn new(step: i32) -> Self {
         #[allow(
             clippy::cast_sign_loss,
             reason = "we are casting to a u32 specifly to take advantage of the wrapping behavior. This casting is inverted before the raw value ever leaves this modual"
@@ -88,8 +102,6 @@ impl SubStep {
     }
 }
 
-// TODO: adding role over will not be the same foe subsets and steps.
-// Will this cause problems?
 impl Sub for SubStep {
     type Output = Self;
 
