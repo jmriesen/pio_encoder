@@ -10,11 +10,11 @@ use embassy_rp::{
     pwm::{Config, Pwm, SetDutyCycle},
 };
 use embassy_sync::blocking_mutex::raw::NoopRawMutex;
-use embassy_time::{Duration, Ticker, Timer};
+use embassy_time::{Duration, Ticker};
 use pid::Pid;
 use pio_speed_encoder::substep_version::EncoderStateMachine;
 use pio_speed_encoder::substep_version::PioEncoderProgram;
-use pio_speed_encoder::{Encoder, EncoderRunner, State};
+use pio_speed_encoder::{EncoderRunner, State};
 use {defmt_rtt as _, panic_probe as _};
 
 bind_interrupts!(struct Irqs {
