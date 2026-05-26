@@ -34,7 +34,6 @@ impl<M: RawMutex, const SUB: usize> Default for State<M, SUB> {
 impl<M: RawMutex, const SUB: usize> State<M, SUB> {
     pub fn new() -> Self {
         Self {
-            //TODO: consider switching to new_with
             watch: Watch::new(),
         }
     }
