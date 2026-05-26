@@ -33,11 +33,11 @@ impl MockSensor {
         inital_conditions: (Step, Direction, Instant),
         events_inst: Vec<(Instant, Step)>,
     ) -> (Self, MockSensorRunner) {
-        let mut current = inital_conditions.2;
+        let mut last_event_time = inital_conditions.2;
         let mut events = vec![];
-        for (inst, step) in events_inst {
-            events.push((inst.duration_since(current), step));
-            current = inst;
+        for (event_time, step) in events_inst {
+            events.push((event_time.duration_since(last_event_time), step));
+            last_event_time = event_time;
         }
         Self::new(inital_conditions, events)
     }
@@ -48,7 +48,6 @@ impl MockSensorRunner {
         for (delta_t, step) in self.events {
             event_time += delta_t;
             Timer::at(event_time).await;
-            Instant::now();
             self.mock.lock().unwrap().position_change(step, event_time);
         }
         Timer::after_secs(1).await;
@@ -73,7 +72,7 @@ fn must_be_run_with_nextest() {
     }
 }
 /// Blocks on a future untill completion.
-/// Clock is advanced by 10 microseconds every time after every poll.
+/// Clock is advanced by 10 microseconds after every poll.
 pub fn block_on_with_timer(future: impl Future) {
     let driver = MockDriver::get();
     driver.reset();
