@@ -82,7 +82,7 @@ impl<'s, const IDLE_STOPING_TIME_MS: u64, PIO: EncoderStateMachine, M: RawMutex,
         loop {
             ticker.next().await;
             let current_mesurement = self.pio_state.read();
-            speed = if current_mesurement.time_since_transition() >= Self::idel_stopping_time() {
+            speed = if current_mesurement.time_since_step_start() >= Self::idel_stopping_time() {
                 Speed::stopped()
             } else {
                 Measurement::estimate_speed(
@@ -95,8 +95,8 @@ impl<'s, const IDLE_STOPING_TIME_MS: u64, PIO: EncoderStateMachine, M: RawMutex,
             self.status_sink.send(Status {
                 speed,
                 step: current_mesurement.step,
-                position: current_mesurement.transition(&self.calibration_data.get())
-                    + speed * (current_mesurement.time_since_transition()),
+                position: current_mesurement.step_start(&self.calibration_data.get())
+                    + speed * (current_mesurement.time_since_step_start()),
                 direction: current_mesurement.direction,
             });
             last_mesurement = current_mesurement;

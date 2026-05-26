@@ -15,37 +15,37 @@ pub struct Measurement {
     pub step: Step,
     /// The direction the encoder is traveling.
     pub direction: Direction,
-    /// The time when the step was registered
-    pub step_instant: embassy_time::Instant,
-    /// The time when this measurement was read from the pio.
-    pub sample_instant: embassy_time::Instant,
+    /// The time when the current step was entered.
+    pub step_start_time: embassy_time::Instant,
+    /// The time when this measurement was taken.
+    pub mesurment_time: embassy_time::Instant,
 }
 
 impl Measurement {
     pub fn new(
         direction: Direction,
-        steps: Step,
-        sample_instant: Instant,
-        time_since_transition: Duration,
+        step: Step,
+        mesurment_time: Instant,
+        time_since_step_stared: Duration,
     ) -> Self {
         Self {
-            step: steps,
+            step,
             direction,
-            step_instant: sample_instant - time_since_transition,
-            sample_instant,
+            step_start_time: mesurment_time - time_since_step_stared,
+            mesurment_time,
         }
     }
-    /// The subset where the most recent step step occurred.
+    /// The `SubStep` representing the leading edge of the step.
     /// If we are moving in the positive direction (counterclockwise) this is the lower bound.
     /// If we are moving in the negative direction (clockwise) this is the upper bound.
-    pub fn transition(&self, calibration: &CalibrationData) -> SubStep {
+    pub fn step_start(&self, calibration: &CalibrationData) -> SubStep {
         match self.direction {
             Direction::Clockwise => self.step.upper_bound(calibration),
             Direction::CounterClockwise => self.step.lower_bound(calibration),
         }
     }
-    pub fn time_since_transition(&self) -> Duration {
-        self.sample_instant - self.step_instant
+    pub fn time_since_step_start(&self) -> Duration {
+        self.mesurment_time - self.step_start_time
     }
 }
 
@@ -55,19 +55,13 @@ impl Measurement {
         current: Measurement,
         calibration_data: &CalibrationData,
     ) -> Option<Speed> {
-        //TODO: look back at this.
-        //Should I be using step or transitions?
-        //In theory we could go step 1/ measure /step 2/step 1 /measure
-        //In the above case it would be valid to conclude we are moving at 0 (net) speed.( we may
-        //be wobbling on the edge of a transition.)
-        // TODO Think up some test cases to decide desired behavior.
-        if previous.step == current.step {
+        if previous.step_start_time == current.step_start_time {
             //No new transitions have occurred, we cannot provide an updated speed estimate
             None
         } else {
             Some(Speed::new(
-                current.transition(calibration_data) - previous.transition(calibration_data),
-                current.step_instant - previous.step_instant,
+                current.step_start(calibration_data) - previous.step_start(calibration_data),
+                current.step_start_time - previous.step_start_time,
             ))
         }
     }
@@ -78,10 +72,11 @@ impl Measurement {
         current: Measurement,
         cali: &CalibrationData,
     ) -> Range<Speed> {
-        let transition_point = current.transition(cali);
+        let current_step_start = current.step_start(cali);
         // Insure duration is always positive.
-        let delta_prev_to_t = duration_dif_abs(previous.sample_instant, current.step_instant);
-        let delta_t_to_current = current.time_since_transition();
+        let time_since_last_mesurement_and_current_step_start =
+            duration_dif_abs(previous.mesurment_time, current.step_start_time);
+        let time_since_current_step_start = current.time_since_step_start();
 
         // We want to always use the largest time delta possible.
         // There are a couple of scenarios that could be happening.
@@ -90,16 +85,28 @@ impl Measurement {
         // |transition| previous| current | therefore previous-transition < delta transition-current.
         // The first case uses the previous measurement sample time all the others use the current
         // measurement sample time.
-        if delta_prev_to_t > delta_t_to_current {
+        if time_since_last_mesurement_and_current_step_start > time_since_current_step_start {
             let range = previous.step.substep_range(cali);
             //NOTE: this is (initial - final) rather than (final-initial) to compensate for the fact
             //that embassy doesn't support negative durations.
-            Speed::new(transition_point - range.end, delta_prev_to_t)
-                ..Speed::new(transition_point - range.start, delta_prev_to_t)
+            Speed::new(
+                current_step_start - range.end,
+                time_since_last_mesurement_and_current_step_start,
+            )
+                ..Speed::new(
+                    current_step_start - range.start,
+                    time_since_last_mesurement_and_current_step_start,
+                )
         } else {
             let range = current.step.substep_range(cali);
-            Speed::new(range.start - transition_point, delta_t_to_current)
-                ..Speed::new(range.end - transition_point, delta_t_to_current)
+            Speed::new(
+                range.start - current_step_start,
+                time_since_current_step_start,
+            )
+                ..Speed::new(
+                    range.end - current_step_start,
+                    time_since_current_step_start,
+                )
         }
     }
     pub fn estimate_speed(
@@ -135,14 +142,14 @@ pub mod tests {
     pub struct MockPio {
         current_position: Step,
         direction_of_travel: Direction,
-        step_instant: Instant,
+        step_start_time: Instant,
     }
     impl MockPio {
-        pub fn new(step: Step, direction: Direction, step_instant: Instant) -> Self {
+        pub fn new(step: Step, direction: Direction, step_start_time: Instant) -> Self {
             Self {
                 current_position: step,
                 direction_of_travel: direction,
-                step_instant,
+                step_start_time,
             }
         }
 
@@ -152,7 +159,7 @@ pub mod tests {
                 "The PIO code can not `reenter` the current step (it would just keep incrementing cycles as if it never left)"
                 );
             //Check how far away the points are from each other
-            self.step_instant = now;
+            self.step_start_time = now;
             self.current_position = new_position;
         }
 
@@ -161,8 +168,8 @@ pub mod tests {
             Measurement {
                 step: self.current_position,
                 direction: self.direction_of_travel,
-                step_instant: self.step_instant,
-                sample_instant: now,
+                step_start_time: self.step_start_time,
+                mesurment_time: now,
             }
         }
     }
@@ -208,8 +215,8 @@ pub mod tests {
             Measurement {
                 step: Step::new(42),
                 direction: Direction::CounterClockwise,
-                step_instant: time - Duration::from_micros(65),
-                sample_instant: time
+                step_start_time: time - Duration::from_micros(65),
+                mesurment_time: time
             }
         );
     }
