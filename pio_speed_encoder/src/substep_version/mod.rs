@@ -8,7 +8,7 @@ use embassy_futures::block_on;
 use embassy_rp::pio::StatusN;
 use embassy_rp::{
     Peri,
-    gpio::Pull,
+    gpio::{self, Input, Pull},
     pio::{
         Common, Config, FifoJoin, Instance, LoadedProgram, PioPin, ShiftConfig, ShiftDirection,
         StateMachine, StatusSource,
@@ -41,11 +41,17 @@ impl<'d, T: Instance, const SM: usize> EncoderStateMachine<'d, T, SM> {
     pub fn new(
         pio: &mut Common<'d, T>,
         mut sm: StateMachine<'d, T, SM>,
-        pin_a: Peri<'d, impl PioPin + 'd>,
-        pin_b: Peri<'d, impl PioPin + 'd>,
+        mut pin_a: Peri<'d, impl PioPin + 'd>,
+        mut pin_b: Peri<'d, impl PioPin + 'd>,
         program: &PioEncoderProgram<'d, T>,
     ) -> Self {
         use embassy_rp::pio::Direction;
+        let inital_pin_state = {
+            [
+                Input::new(pin_a.reborrow(), Pull::Up).get_level(),
+                Input::new(pin_b.reborrow(), Pull::Up).get_level(),
+            ]
+        };
         let mut pin_a = pio.make_pio_pin(pin_a);
         let mut pin_b = pio.make_pio_pin(pin_b);
         pin_a.set_pull(Pull::Up);
@@ -79,11 +85,19 @@ impl<'d, T: Instance, const SM: usize> EncoderStateMachine<'d, T, SM> {
         cfg.use_program(&program.prg, &[]);
         sm.set_config(&cfg);
         //Raw reading the pins this is fine since we already own the pins.
-        let pin_state = 0i32; //TODO actually read the value
+
+        let [a, b] = inital_pin_state.map(|x| x == gpio::Level::High);
+        let inital_pin_state_int = (a as u8) << 1 | (b as u8) << 0;
 
         critical_section::with(|_| {
+            use gpio::Level as E;
             unsafe {
-                sm.set_y((-pin_state) as u32);
+                // The output shift register is used to hold the current + previous state.
+                // This is combined with a jump table to figure out how each transition should be
+                // handled.
+                //
+                // Here we are setting the ~current position as a dummy previous position
+                sm.set_y((!inital_pin_state_int) as u32);
                 sm.exec_instr(
                     InstructionOperands::MOV {
                         destination: MovDestination::OSR,
@@ -92,12 +106,14 @@ impl<'d, T: Instance, const SM: usize> EncoderStateMachine<'d, T, SM> {
                     }
                     .encode(),
                 );
-                sm.set_y(match pin_state {
-                    0 => 0,
-                    1 => 3,
-                    2 => 1,
-                    3 => 2,
-                    _ => 0, /*unreachable*/
+                // Phase calibration corresponds to physical differences in an encoder.
+                // If you use precomputed calibration date (not supported at time of writing, but
+                // planned) it is important to make sure step 0 (the int) always corresponds to phase zero (The low/low signal)
+                sm.set_y(match inital_pin_state {
+                    [E::Low, E::Low] => 0,
+                    [E::High, E::Low] => 1,
+                    [E::High, E::High] => 2,
+                    [E::Low, E::High] => 3,
                 });
             }
         });
