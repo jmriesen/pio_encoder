@@ -23,14 +23,13 @@ jobs:
         path: |
           ~/.cargo/registry
           ~/.cargo/git
-          ~/.cargo/bin
           target
         key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
         restore-keys: |
           ${{ runner.os }}-cargo-
 
     - name: Install nextest
-      run: cargo install --list | grep -q '^cargo-nextestv0.9.124:' || cargo install cargo-nextest --version 0.9.124  --locked
+      run: cargo install cargo-nextest --version 0.9.124  --locked
 
     - name: Build logic
       working-directory: ./logic
