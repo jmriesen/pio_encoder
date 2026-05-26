@@ -138,7 +138,7 @@ async fn sample_step_len(
         }
     };
 
-    let delta_t = next_step.step_instant - current.step_instant;
+    let delta_t = next_step.step_start_time - current.step_start_time;
     let changed_direction = current.direction != next_step.direction;
 
     if changed_direction || delta_t > Duration::from_millis(20) {
